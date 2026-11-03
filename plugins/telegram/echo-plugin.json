@@ -4,10 +4,13 @@
   "version": "0.1.0",
   "summary": "Talk to your Claude · Echo folder session from your phone through your own Telegram bot, while the session is open in Echo",
   "uses": {
-    "channel": { "plugin": "telegram@claude-plugins-official" },
-    "deliver": { "to": ["telegram"] }
-  },
-  "settings": [
-    { "key": "bot_token", "label": "Bot token", "type": "secret", "help": "From @BotFather: /newbot, then paste the token here. Your own bot — it answers only you." }
-  ]
+    "channel": {
+      "plugin": "telegram@claude-plugins-official"
+    },
+    "deliver": {
+      "to": [
+        "telegram"
+      ]
+    }
+  }
 }

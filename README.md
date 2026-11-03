@@ -13,7 +13,7 @@ install is written by Echo from the manifest's `uses`, not by the plugin.
 | [Telegram](plugins/telegram) | Your Claude · Echo folder session from your phone, through your own bot |
 | [Obsidian vault](plugins/obsidian) | Your vault as Echo's second brain; minutes and people written into it |
 
-These need capabilities that arrive in coming Echo versions; until then Echo lists them as "Needs a newer Echo".
+Scheduler needs Echo 0.7 or later; Telegram and Obsidian vault need capabilities that arrive after it — until then Echo lists them as "Needs a newer Echo". Your Telegram bot is set up once, in Echo (Settings → Plugins → Echo sends to you), and shared by the plugins that send to you.
 
 ## Make a marketplace of your own
 
