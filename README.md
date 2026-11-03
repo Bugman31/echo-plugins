@@ -3,9 +3,17 @@
 The built-in marketplace of [Echo](https://github.com/onetest-ai/echo): plugins you install from Echo's
 Settings → Plugins (or `echoctl plugin install <id>`).
 
-An Echo plugin is a **declarative package** — a manifest naming the Echo capabilities it uses, plus skills and
-settings. It carries no code: everything that runs is Echo's own, and the permission sheet Echo shows before an
-install is written by Echo from the manifest's `uses`, not by the plugin.
+An Echo plugin is a package that brings **its own code** — the way dsh-desktop's plugins do:
+
+- `main.js` — the **host half**, run inside Echo (also with its window closed): `export function apply(ctx)` with Echo's
+  services — `ctx.command`, `ctx.every`, `ctx.store`, `ctx.claude.run` (your AI profiles, Echo's guard), `ctx.deliver.send`,
+  `ctx.markdown`, `ctx.inbox`, `ctx.notify`, `ctx.package` (its own files).
+- `client.js` — the **client half**, loaded into the Echo window: `export function apply(ctx)` — `ctx.call` (its host
+  half), `ctx.settings.section` (its own Settings section), `ctx.panels.add`, `ctx.slots.add` (buttons in Echo's cards:
+  `call.menu`, `task.actions`, `calendar.event`), `ctx.palette.add`, `ctx.ui` (Echo's own pieces, so it looks like Echo).
+- `echo-plugin.json` — what it is and what it touches (`uses`); Echo writes the install sheet from it, and installing is
+  trusting its code.
+- Anything else it needs: skills, templates, prompts.
 
 | Plugin | What it does |
 |---|---|
@@ -13,7 +21,7 @@ install is written by Echo from the manifest's `uses`, not by the plugin.
 | [Telegram](plugins/telegram) | Your Claude · Echo folder session from your phone, through your own bot |
 | [Obsidian vault](plugins/obsidian) | Your vault as Echo's second brain; minutes and people written into it |
 
-Scheduler needs Echo 0.7 or later; Telegram and Obsidian vault need capabilities that arrive after it — until then Echo lists them as "Needs a newer Echo". Your Telegram bot is set up once, in Echo (Settings → Plugins → Echo sends to you), and shared by the plugins that send to you.
+Scheduler needs an Echo with plugins (0.7 or later); Telegram and Obsidian vault need capabilities that arrive after it — until then Echo lists them as "Needs a newer Echo". Your Telegram bot is set up once, in Echo (Settings → Plugins → Echo sends to you), and shared by the plugins that send to you.
 
 ## Make a marketplace of your own
 
@@ -39,13 +47,14 @@ Each plugin folder holds `echo-plugin.json`:
   "name": "Acme reports",
   "version": "0.1.0",
   "summary": "One line on what it does",
-  "echo": ">=0.7.0",
-  "uses": { "deliver": { "to": ["mail"] } },
+  "uses": { "claude": {}, "deliver": { "to": ["mail"] } },
+  "main": "main.js",
+  "client": "client.js",
   "settings": [{ "key": "folder", "label": "Reports folder", "type": "folder" }]
 }
 ```
 
-Capabilities (`uses`): `routines`, `deliver` (`telegram`, `teams`, `mail` — always to the user), `channel`
-(a Claude Code channel plugin of claude-plugins-official), `brain_source` (`vault`), `export` (`vault`: minutes,
-people), `sessions` (`read`, `skills`). Setting types: `string`, `bool`, `folder`, `secret`. Folders may not
-contain links; a plugin is at most 400 files / 20 MB. The design: `docs/plugins-design.md` in Echo.
+`uses`: `claude`, `schedule`, `deliver` (`telegram`, `teams`, `mail`), `channel` (a Claude Code channel plugin of
+claude-plugins-official), `brain_source` (`vault`), `export` (`vault`: minutes, people), `sessions` (`read`, `skills`).
+Setting types: `string`, `bool`, `folder`, `secret`. Folders may not contain links; a plugin is at most 400 files / 20 MB.
+[Scheduler](plugins/scheduler) is a complete example of both halves. The design: `docs/plugins-design.md` in Echo.
