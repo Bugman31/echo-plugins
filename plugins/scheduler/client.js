@@ -5,6 +5,7 @@
 // Everything goes through the host half (`ctx.call`); the look is Echo's own tokens.
 
 const LABEL = { telegram: 'Telegram', teams: 'Teams', mail: 'Mail' }
+const label = (k) => label(k).charAt(0).toUpperCase() + k.slice(1)
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_SHORT = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
 const PERMS = [
@@ -124,12 +125,12 @@ export function apply(ctx) {
     if (d.toDateString() === tom.toDateString()) return `Tomorrow ${tm}`
     return `${d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })} ${tm}`
   }
-  const sends = (r) => (r.deliver || []).map((k) => `<span class="sch-ci">${k === 'mail' && r.mail_to && r.mail_to.length ? `Mail → ${r.mail_to.length === 1 ? esc(r.mail_to[0]) : `${r.mail_to.length} people`}` : LABEL[k] || esc(k)}</span>`).join('') || '<span class="sch-sub">Nowhere — kept in its runs</span>'
+  const sends = (r) => (r.deliver || []).map((k) => `<span class="sch-ci">${k === 'mail' && r.mail_to && r.mail_to.length ? `Mail → ${r.mail_to.length === 1 ? esc(r.mail_to[0]) : `${r.mail_to.length} people`}` : esc(label(k))}</span>`).join('') || '<span class="sch-sub">Nowhere — kept in its runs</span>'
   const perm = (t) => (t === 'read' ? 'reads only' : t === 'folder' ? 'your folder session’s permissions' : 'asks nothing')
   const lastLine = (l) => !l ? ['', 'Not run yet']
     : l.state === 'failed' ? ['bad', l.message && l.message.startsWith('Not sent') ? 'Not sent' : 'Failed']
     : l.state === 'empty' ? ['', 'Nothing to send']
-    : (l.sent || []).length ? ['ok', `Sent to ${l.sent.map((k) => LABEL[k] || k).join(', ')}`] : ['ok', 'Answered']
+    : (l.sent || []).length ? ['ok', `Sent to ${l.sent.map((k) => label(k)).join(', ')}`] : ['ok', 'Answered']
 
   const load = async () => {
     try { data = await ctx.call('view'); error = '' } catch (e) { error = e.message }
@@ -246,7 +247,7 @@ export function apply(ctx) {
     return `<div class="sch-p">
       <div><div style="font-size:15px;font-weight:650">${esc(r.name)}</div><div class="sch-sub">${esc(r.when)}${r.enabled && r.next ? ` · next ${esc(when(r.next).toLowerCase())}` : r.enabled ? '' : ' · off'}</div></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${r.running ? '<button class="btn" disabled>Running…</button>' : `<button class="btn primary" data-sch-run="${esc(r.id)}">Run now</button>`}<button class="btn" data-sch-edit="${esc(r.id)}">Edit</button></div>
-      <div class="sch-kv"><span>Sends to</span><div>${(r.deliver || []).map((k) => (k === 'mail' && r.mail_to.length ? `Mail — ${esc(r.mail_to.join(', '))}` : k === 'mail' ? 'Mail — you' : LABEL[k])).join(', ') || 'Nowhere'}</div>
+      <div class="sch-kv"><span>Sends to</span><div>${(r.deliver || []).map((k) => (k === 'mail' && r.mail_to.length ? `Mail — ${esc(r.mail_to.join(', '))}` : k === 'mail' ? 'Mail — you' : esc(label(k)))).join(', ') || 'Nowhere'}</div>
         <span>Permissions</span><div>${esc(perm(r.tools).replace(/^./, (c) => c.toUpperCase()))}</div>
         <span>AI</span><div>${esc(profileName(r.profile))}${r.model ? ` · ${esc(r.model)}` : ''}</div>
         <span>Prompt</span><div class="sch-sub" style="color:var(--text-2)">${esc(r.prompt.replace(/\s+/g, ' ').slice(0, 140))}${r.prompt.length > 140 ? '…' : ''}</div></div>
@@ -277,7 +278,7 @@ export function apply(ctx) {
         ${tok('Output', u.output_tokens, sp && sp.output, 'var(--warn)', pct(u.output_tokens))}
         <div class="sch-sub">${u.turns || 0} turns · ${secs(u.duration_ms)}${r ? ` · this routine: ${money(r.month.cost)} in 30 days` : ''}. As Claude Code reports it; split by Claude’s price ratios.</div></div>` : ''
     const where = (rec.sent || []).length || rec.state === 'failed' ? `<div class="sch-card"><h3 class="sch-h4">Where it went</h3>
-        ${(rec.sent || []).map((k) => `<div class="sch-del"><span class="sch-dot ok"></span><b>${LABEL[k] || esc(k)}</b><span class="sch-sub">${k === 'mail' && r && r.mail_to.length ? esc(r.mail_to.join(', ')) : 'to you'}</span><span style="color:var(--me)">Delivered</span></div>`).join('')}
+        ${(rec.sent || []).map((k) => `<div class="sch-del"><span class="sch-dot ok"></span><b>${esc(label(k))}</b><span class="sch-sub">${k === 'mail' && r && r.mail_to.length ? esc(r.mail_to.join(', ')) : 'to you'}</span><span style="color:var(--me)">Delivered</span></div>`).join('')}
         ${rec.state === 'failed' ? `<div class="sch-del"><span class="sch-dot bad"></span><b>—</b><span class="sch-sub" style="color:var(--danger)">${esc(rec.message || '')}</span><span></span></div>` : ''}</div>` : ''
     const steps = d.steps.length ? `<div class="sch-card"><h3 class="sch-h4">What it did</h3>${d.steps.map((s) => `<div class="sch-step"><span>${esc(s.t)}</span><span>${esc(s.text)}</span></div>`).join('')}</div>` : ''
     return `<div class="sch">${crumbs}
@@ -295,7 +296,9 @@ export function apply(ctx) {
 
   const editPage = () => {
     const e = edit, d = (data && data.deliver) || {}
-    const ready = { telegram: !!(d.telegram && d.telegram.paired), teams: !!d.teams, mail: !!d.mail }
+    const ready = { teams: !!d.teams, mail: !!d.mail }
+    const provided = d.provided || []
+    for (const p of provided) ready[p.kind] = !!p.ready
     const P = data.profiles || { profiles: [] }
     const crumbs = `<div class="sch-crumb"><button data-sch-list>Scheduler</button><span>›</span><span>${e.id ? esc(e.name) : 'New routine'}</span>${e.id ? '<span>›</span><span>Edit</span>' : ''}</div>`
     const modes = [['daily', 'Every day'], ['weekdays', 'Weekdays'], ['days', 'Some days'], ['every', 'Every few hours']]
@@ -306,7 +309,7 @@ export function apply(ctx) {
     const timeRow = e.mode === 'every'
       ? `<div style="display:flex;gap:8px;align-items:center"><label class="sch-sub" for="sch-hours">every</label><input class="sch-in" id="sch-hours" type="number" min="1" max="24" value="${esc(String(e.hours))}" style="width:70px"><span class="sch-sub">hours, from midnight</span></div>`
       : `<div style="display:flex;gap:4px;align-items:center">${dayBtns}<span style="width:10px"></span><label class="sch-sub" for="sch-time">at</label><input class="sch-in" id="sch-time" type="time" value="${esc(e.time)}" style="width:96px"></div>`
-    const dest = (k, sub, right) => `<button class="sch-dest${e.deliver.includes(k) ? ' on' : ''}" data-sch-to="${k}"${ready[k] ? '' : ' disabled'}><span class="sch-cb${e.deliver.includes(k) ? ' on' : ''}" aria-hidden="true">${e.deliver.includes(k) ? '✓' : ''}</span><div><b style="font-weight:600;font-size:12.5px">${LABEL[k]}</b><div class="sch-sub">${sub}</div></div><span class="sch-sub">${right}</span></button>`
+    const dest = (k, sub, right) => `<button class="sch-dest${e.deliver.includes(k) ? ' on' : ''}" data-sch-to="${k}"${ready[k] ? '' : ' disabled'}><span class="sch-cb${e.deliver.includes(k) ? ' on' : ''}" aria-hidden="true">${e.deliver.includes(k) ? '✓' : ''}</span><div><b style="font-weight:600;font-size:12.5px">${esc(label(k))}</b><div class="sch-sub">${sub}</div></div><span class="sch-sub">${right}</span></button>`
     const avg = (() => { const r = data.routines.find((x) => x.id === e.id); const c = r ? r.runs.filter((x) => x.cost != null) : []; return c.length ? c.reduce((a, x) => a + x.cost, 0) / c.length : null })()
     const tr = trial && trial.detail
     const trialCard = !trial ? '' : !tr || !tr.record
@@ -328,7 +331,7 @@ export function apply(ctx) {
             ${dest('mail', e.mailOthers ? 'To the addresses below' : 'To you — or <u data-sch-others>other addresses</u>', ready.mail ? esc(d.account || '') : 'Sign in to Microsoft 365')}
             ${e.mailOthers ? `<div style="display:flex;gap:8px;align-items:center"><input class="sch-in" id="sch-mailto" style="flex:1" value="${esc(e.mail_to.join(', '))}" placeholder="name@company.example, …"><button class="btn ghost" data-sch-others>To me</button></div><span class="sch-sub">Mail to others goes from your account, as written — nobody reviews it first.</span>` : ''}
             ${dest('teams', 'Your chat with yourself', ready.teams ? 'Ready' : 'Sign in to Microsoft 365')}
-            ${dest('telegram', ready.telegram ? `Your bot @${esc(d.telegram.bot)}` : '<span class="sch-warn">No bot yet</span>', ready.telegram ? 'Ready' : '<u data-sch-connect>Connect…</u>')}
+            ${provided.map((p) => dest(p.kind, p.ready ? `From the ${esc(p.plugin)} plugin` : `<span class="sch-warn">${esc(p.why || 'Not set up yet')}</span>`, p.ready ? 'Ready' : `<u data-sch-connect="${esc(p.plugin)}">Set up…</u>`)).join('')}
             <button class="sch-dest" data-sch-skip style="grid-template-columns:auto minmax(0,1fr);border:0;padding:4px 0"><span class="sch-cb${e.skip_empty !== false ? ' on' : ''}" aria-hidden="true">${e.skip_empty !== false ? '✓' : ''}</span><span class="sch-sub">Send nothing when there’s nothing worth sending</span></button></div>
           <div class="sch-f"><span class="sch-lbl">What Claude may do</span>${PERMS.map(([v, l, h, w]) => `<button class="sch-perm${(e.tools || 'read') === v ? ' on' : ''}" data-sch-perm="${v}" aria-pressed="${(e.tools || 'read') === v}"><span class="sch-cb round${(e.tools || 'read') === v ? ' on' : ''}" aria-hidden="true">${(e.tools || 'read') === v ? '●' : ''}</span><div><b style="font-weight:600;font-size:12.5px">${l}</b><div class="sch-sub${w ? ' sch-warn' : ''}">${h}</div></div></button>`).join('')}</div>
         </div>
@@ -398,7 +401,7 @@ export function apply(ctx) {
     }
     if ('schTrialclose' in d) { trial = null; return ctx.render() }
     if ('schOpen' in d) { page = 'list'; return ctx.go(`settings/${SECTION}`) }
-    if ('schConnect' in d) return ctx.go('settings/plugins')
+    if ('schConnect' in d) return ctx.go(d.schConnect ? `settings/${d.schConnect}:main` : 'settings/plugins')
   })
   document.addEventListener('input', (ev) => { if (page === 'edit' && ev.target && ev.target.id === 'sch-hours') readForm() })
   document.addEventListener('change', (ev) => { if (page === 'edit' && ev.target && ['sch-time', 'sch-hours'].includes(ev.target.id)) { readForm(); ctx.render() } })

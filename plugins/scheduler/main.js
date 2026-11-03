@@ -9,7 +9,7 @@
 //   profile:                   # an AI profile id (empty: the default)
 //   model:                     # empty: the profile's minutes model
 //   tools: read                # read · folder · skip — the user's pick, the prompt being theirs
-//   deliver: telegram, mail    # telegram · teams · mail
+//   deliver: telegram, mail    # teams · mail · a way a plugin adds (telegram…)
 //   mail_to:                   # mail only: other addresses (empty: the user)
 //   skip_empty: true           # nothing worth sending → nothing sent
 //   enabled: true
@@ -22,7 +22,7 @@
 
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const KINDS = ['telegram', 'teams', 'mail']
+const validKind = (k) => /^[a-z0-9-]{1,24}$/.test(k)
 const NOTHING = 'NOTHING'
 const KEEP_RUNS = 20
 
@@ -136,8 +136,8 @@ function check(r) {
   if (!String(r.name).trim()) throw new Error('a routine needs a name')
   parseSchedule(r.schedule)
   if (!['read', 'folder', 'skip'].includes(r.tools)) throw new Error(`tools “${r.tools}”: read, folder or skip`)
-  const bad = r.deliver.find((d) => !KINDS.includes(d))
-  if (bad) throw new Error(`deliver “${bad}”: telegram, teams or mail`)
+  const bad = r.deliver.find((d) => !validKind(d))
+  if (bad) throw new Error(`deliver “${bad}” isn't a way to send (teams, mail, or one a plugin adds)`)
   const addr = r.mail_to.find((a) => !validAddress(a))
   if (addr) throw new Error(`“${addr}” isn't a mail address`)
   if (r.mail_to.length > 20) throw new Error('mail_to: at most 20 addresses')

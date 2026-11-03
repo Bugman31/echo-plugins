@@ -21,7 +21,7 @@ An Echo plugin is a package that brings **its own code** — the way dsh-desktop
 | [Telegram](plugins/telegram) | Your Claude · Echo folder session from your phone, through your own bot |
 | [Obsidian vault](plugins/obsidian) | Your vault as Echo's second brain; minutes and people written into it |
 
-Scheduler needs an Echo with plugins (0.7 or later); Telegram and Obsidian vault need capabilities that arrive after it — until then Echo lists them as "Needs a newer Echo". Your Telegram bot is set up once, in Echo (Settings → Plugins → Echo sends to you), and shared by the plugins that send to you.
+Scheduler needs an Echo with plugins (0.7 or later); Telegram and Obsidian vault need capabilities that arrive after it — until then Echo lists them as "Needs a newer Echo". Your Telegram bot lives in the Telegram plugin (Settings → From plugins → Telegram); other plugins send to it through Echo.
 
 ## Make a marketplace of your own
 
@@ -54,7 +54,8 @@ Each plugin folder holds `echo-plugin.json`:
 }
 ```
 
-`uses`: `claude`, `schedule`, `deliver` (`telegram`, `teams`, `mail`), `channel` (a Claude Code channel plugin of
-claude-plugins-official), `brain_source` (`vault`), `export` (`vault`: minutes, people), `sessions` (`read`, `skills`).
+`uses`: `claude`, `schedule`, `deliver` (`teams`, `mail`, or a way a plugin adds), `deliver_provider` (`kinds`: the
+ways it adds — Telegram adds `telegram`), `network` (`hosts` it may reach over HTTPS), `channel` (a Claude Code channel
+plugin of claude-plugins-official), `brain_source` (`vault`), `export` (`vault`: minutes, people), `sessions`.
 Setting types: `string`, `bool`, `folder`, `secret`. Folders may not contain links; a plugin is at most 400 files / 20 MB.
 [Scheduler](plugins/scheduler) is a complete example of both halves. The design: `docs/plugins-design.md` in Echo.
