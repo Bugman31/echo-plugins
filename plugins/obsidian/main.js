@@ -355,28 +355,44 @@ export function apply(ctx) {
     for (const t of [].concat(props.tags || props.tag || [])) if (t) tags.add(String(t).replace(/^#/, ''))
     for (const m of body.matchAll(/(?:^|[\s(])#([A-Za-z][\w/-]{1,60})/g)) tags.add(m[1])
     const links = [...new Set([...body.matchAll(/!?\[\[([^\]]+)\]\]/g)].map((m) => linkTarget(m[1])).filter(Boolean))]
-    const name = path.split('/').pop().replace(/\.md$/i, '')
-    return { path, name, title: typeof props.title === 'string' && props.title ? props.title : name, folder: path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '', props, tags: [...tags], links, mtime }
-  }
-  const index = async (v) => {
-    const files = await ctx.fs.walk(v.root, { ext: ['md'], max: 50000 })
-    const sig = `${files.length}:${files.reduce((n, f) => Math.max(n, f.mtime || 0), 0)}`
-    const old = indexes.get(v.id)
-    if (old && old.sig === sig) return old
-    const notes = new Map()
-    for (const f of files) {
-      const prev = old && old.notes.get(f.path)
-      if (prev && prev.mtime === f.mtime) { notes.set(f.path, prev); continue }
-      let text = ''
-      try { text = ctx.fs.read(v.root, f.path, 400000) } catch { continue }
-      notes.set(f.path, noteOf(f.path, text, f.mtime))
+    // The line each link sits on (a backlink shows it), with the links written as their text.
+    const lines = {}
+    for (const line of body.split('\n')) for (const m of line.matchAll(/!?\[\[([^\]]+)\]\]/g)) {
+      const t = linkTarget(m[1])
+      if (t && !lines[t]) lines[t] = line.replace(/!?\[\[([^\]]+)\]\]/g, (_, raw) => (raw.split('|')[1] || linkTarget(raw)).trim()).trim().slice(0, 200)
     }
+    const name = path.split('/').pop().replace(/\.md$/i, '')
+    return { path, name, title: typeof props.title === 'string' && props.title ? props.title : name, folder: path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '', props, tags: [...tags], links, lines, mtime }
+  }
+  const building = new Map() // vault id → the index being built (one at a time)
+  const index = (v) => {
+    if (!building.has(v.id)) building.set(v.id, build(v).finally(() => building.delete(v.id)))
+    return building.get(v.id)
+  }
+  // Every file is listed each time (cheap); only files whose time or size changed are read again — in batches,
+  // off the plugin's own time slice, the index kept as it grows.
+  const build = async (v) => {
+    const files = await ctx.fs.walk(v.root, { ext: ['md'], max: 50000 })
+    const old = indexes.get(v.id) || { notes: new Map() }
+    const notes = new Map()
+    const todo = []
+    for (const f of files) {
+      const prev = old.notes.get(f.path)
+      if (prev && prev.mtime === f.mtime && prev.size === f.size) notes.set(f.path, prev)
+      else todo.push(f)
+    }
+    for (let i = 0; i < todo.length; i += 200) {
+      const batch = todo.slice(i, i + 200)
+      const texts = await ctx.fs.readMany(v.root, batch.map((f) => f.path), 400000)
+      batch.forEach((f, k) => { if (texts[k] != null) notes.set(f.path, { ...noteOf(f.path, texts[k], f.mtime), size: f.size }) })
+    }
+    // A name links to the note of that name; two of them: the shortest path wins (as Obsidian does).
     const byName = new Map()
-    for (const n of notes.values()) {
+    for (const n of [...notes.values()].sort((a, b) => b.path.length - a.path.length)) {
       byName.set(n.name.toLowerCase(), n.path)
       byName.set(n.path.replace(/\.md$/i, '').toLowerCase(), n.path)
     }
-    const ix = { sig, notes, byName }
+    const ix = { notes, byName }
     indexes.set(v.id, ix)
     return ix
   }
@@ -404,21 +420,20 @@ export function apply(ctx) {
     const { body } = parseFrontmatter(text)
     // Wikilinks become markers the window turns into links (Echo's Markdown writer keeps only https links).
     const wl = []
-    const md = body.replace(/(!?)\[\[([^\]]+)\]\]/g, (_, bang, raw) => {
+    // A marker of this call only: a note's own text can't make one (the window replaces them in text, not code).
+    const marker = Math.random().toString(36).slice(2, 10)
+    // Code (fenced blocks, inline spans) is shown as written: its [[…]] isn't a link.
+    const md = body.split(/(```[\s\S]*?```|`[^`\n]*`)/).map((part, i) => i % 2 ? part : part.replace(/(!?)\[\[([^\]]+)\]\]/g, (_, bang, raw) => {
       const target = linkTarget(raw)
       const shown = (raw.split('|')[1] || target).trim()
       wl.push({ target, path: resolve(ix, target), shown, embed: !!bang })
-      return `⟦wl${wl.length - 1}⟧`
-    })
+      return `⟦${marker}:${wl.length - 1}⟧`
+    })).join('')
     const backlinks = []
     for (const o of ix.notes.values()) {
-      if (o.path === path || !o.links.some((l) => resolve(ix, l) === path)) continue
-      let line = ''
-      try {
-        const t = ctx.fs.read(v.root, o.path, 200000)
-        line = (t.split('\n').find((l) => /\[\[[^\]]+\]\]/.test(l) && [...l.matchAll(/\[\[([^\]]+)\]\]/g)].some((m) => resolve(ix, linkTarget(m[1])) === path)) || '').trim().slice(0, 200)
-      } catch { /* unreadable */ }
-      backlinks.push({ path: o.path, title: o.title, line: line.replace(/!?\[\[([^\]]+)\]\]/g, (_, raw) => (raw.split('|')[1] || linkTarget(raw)).trim()) })
+      if (o.path === path) continue
+      const t = o.links.find((l) => resolve(ix, l) === path)
+      if (t) backlinks.push({ path: o.path, title: o.title, line: (o.lines || {})[t] || '' })
     }
     const out = [...new Set(n.links.map((l) => resolve(ix, l)).filter(Boolean))]
     const nodes = [{ id: path, title: n.title, folder: n.folder, me: true }]
@@ -434,9 +449,7 @@ export function apply(ctx) {
     // Properties that link (`company: "[[Acme]]"`): where each link leads.
     const propLinks = {}
     for (const val of Object.values(n.props)) for (const x of [].concat(val)) for (const mm of String(x).matchAll(/\[\[([^\]]+)\]\]/g)) propLinks[linkTarget(mm[1])] = resolve(ix, linkTarget(mm[1]))
-    // A body that starts with its own title as a heading doesn't show it twice.
-    const html = ctx.markdown(md).replace(new RegExp(`^\\s*<h1[^>]*>${n.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/&/g, '&amp;').replace(/</g, '&lt;')}</h1>`), '')
-    return { path, title: n.title, folder: n.folder, props: n.props, prop_links: propLinks, tags: n.tags, html, wikilinks: wl, backlinks, local: { nodes, edges }, in_echo: inEcho, root: v.root }
+    return { path, title: n.title, folder: n.folder, props: n.props, prop_links: propLinks, tags: n.tags, html: ctx.markdown(md), marker, wikilinks: wl, backlinks, local: { nodes, edges }, in_echo: inEcho, root: v.root }
   })
   ctx.command('graph', async ({ id, mode }) => {
     const v = vaultOf(id)

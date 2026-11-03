@@ -52,6 +52,7 @@ const CSS = `
 .ob-bl button { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; font-weight: 600; text-align: left; }
 .ob-legend { position: absolute; left: 12px; bottom: 12px; background: var(--panel, var(--bg)); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; display: flex; flex-direction: column; gap: 3px; max-height: 40%; overflow: auto; }
 .ob-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 5px; margin-right: 6px; }
+.ob-err { padding: 16px; }
 .ob-empty { margin: auto; max-width: 420px; text-align: center; padding-top: 80px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
 
 .obs { display: flex; height: 100%; min-height: 0; margin: -24px -28px; }
@@ -184,21 +185,56 @@ export function apply(ctx) {
   }
 
   // ── the Obsidian activity: browse a vault as Obsidian shows it ──
-  const A = { browse: {}, notes: {}, open: [], tab: null, side: 'files', q: '', tag: '', folded: new Set(), gmode: 'links', color: 'folder', graph: {}, loading: {}, zoomed: new Set() }
+  const A = { browse: {}, notes: {}, opens: {}, tabs: {}, side: 'files', q: '', tag: '', folded: new Set(), gmode: 'links', color: 'folder', graph: {}, loading: {}, errors: {}, zoomed: new Set() }
+  // Open notes and the chosen tab, per vault.
+  const opened = (vault) => (A.opens[vault] = A.opens[vault] || [])
   const PAL = ['#4fb3d9', '#9b78ff', '#e0a96d', '#3ccf91', '#e07fa3', '#5f8fe0', '#d9c84f', '#7fd0c0', '#f0a24a', '#b98cff']
   const colorOf = (k) => PAL[[...String(k)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % PAL.length]
-  const route = () => { const r = ctx.where().route || ''; const i = r.indexOf('/'); return i < 0 ? { vault: r, path: '' } : { vault: r.slice(0, i), path: decodeURIComponent(r.slice(i + 1)) } }
-  const fetchOnce = (key, fn) => { if (A.loading[key]) return; A.loading[key] = true; fn().catch((e) => { A.error = e.message }).finally(() => { A.loading[key] = false; ctx.render() }) }
+  // Echo decodes the hash already: the path after the vault is as written.
+  const route = () => { const r = ctx.where().route || ''; const i = r.indexOf('/'); return i < 0 ? { vault: r, path: '' } : { vault: r.slice(0, i), path: r.slice(i + 1) } }
+  // One request per key at a time; a failure is shown with Retry, never asked again by itself.
+  const fetchOnce = (key, fn) => {
+    if (A.loading[key] || A.errors[key]) return
+    A.loading[key] = true
+    fn().catch((e) => { A.errors[key] = (e && e.message) || String(e) }).finally(() => { A.loading[key] = false; ctx.render() })
+  }
+  const failed = (key) => A.errors[key] ? `<div class="ob-err"><span class="error">${esc(A.errors[key])}</span> <button class="btn" data-ob-retry="${esc(key)}">Retry</button></div>` : ''
   const openNote = (vault, path) => {
-    if (!A.open.includes(path)) A.open.push(path)
-    A.tab = path
+    if (!opened(vault).includes(path)) opened(vault).push(path)
+    A.tabs[vault] = path
     ctx.go(`obsidian:vaults/${vault}/${encodeURIComponent(path)}`)
   }
-  const wikify = (n, vault) => n.html.replace(/⟦wl(\d+)⟧/g, (_, i) => {
-    const w = n.wikilinks[+i]
-    if (!w) return ''
-    return w.path ? `<button class="ob-wl" data-ob-open="${esc(w.path)}" data-ob-vault="${esc(vault)}" title="${esc(w.path)}">${esc(w.shown)}</button>` : `<span class="ob-wl miss" title="Not in this vault yet">${esc(w.shown)}</span>`
-  })
+  // The note's HTML with its wikilinks as links — replaced in text only (never in an attribute or code), its own
+  // title as a first heading left out (it is shown above).
+  const wikify = (n, vault) => {
+    const t = document.createElement('template')
+    t.innerHTML = n.html
+    const first = t.content.firstElementChild
+    if (first && first.tagName === 'H1' && first.textContent.trim() === n.title.trim()) first.remove()
+    const re = new RegExp(`⟦${n.marker}:(\\d+)⟧`, 'g')
+    const walker = document.createTreeWalker(t.content, NodeFilter.SHOW_TEXT)
+    const hits = []
+    for (let x = walker.nextNode(); x; x = walker.nextNode()) if (re.test(x.nodeValue) && !x.parentElement.closest('code, pre')) hits.push(x)
+    for (const x of hits) {
+      const frag = document.createDocumentFragment()
+      let last = 0
+      for (const m of x.nodeValue.matchAll(re)) {
+        frag.append(x.nodeValue.slice(last, m.index))
+        const w = n.wikilinks[+m[1]]
+        if (w) {
+          const el = document.createElement(w.path ? 'button' : 'span')
+          el.className = w.path ? 'ob-wl' : 'ob-wl miss'
+          el.textContent = w.shown
+          if (w.path) { el.dataset.obOpen = w.path; el.dataset.obVault = vault; el.title = w.path } else el.title = 'Not in this vault yet'
+          frag.append(el)
+        }
+        last = m.index + m[0].length
+      }
+      frag.append(x.nodeValue.slice(last))
+      x.replaceWith(frag)
+    }
+    return t.innerHTML
+  }
   const treeHtml = (b, vault, cur) => {
     const words = A.q.toLowerCase().split(/\s+/).filter(Boolean)
     let notes = b.notes
@@ -223,11 +259,16 @@ export function apply(ctx) {
   }
   const noteHtml = (n, vault, root) => {
     // A property's [[links]] open their note here.
-    const linked = (text) => esc(text).replace(/\[\[([^\]]+)\]\]/g, (all, raw) => {
-      const target = raw.split('|')[0].split('#')[0].trim(), path = (n.prop_links || {})[target]
-      const shown = (raw.split('|')[1] || target).trim()
-      return path ? `<button class="ob-wl" data-ob-open="${esc(path)}" data-ob-vault="${esc(vault)}">${shown}</button>` : `<span class="ob-wl miss">${shown}</span>`
-    })
+    const linked = (text) => {
+      let out = '', last = 0
+      for (const m of text.matchAll(/\[\[([^\]]+)\]\]/g)) {
+        out += esc(text.slice(last, m.index))
+        const target = m[1].split('|')[0].split('#')[0].trim(), path = (n.prop_links || {})[target], shown = (m[1].split('|')[1] || target).trim()
+        out += path ? `<button class="ob-wl" data-ob-open="${esc(path)}" data-ob-vault="${esc(vault)}">${esc(shown)}</button>` : `<span class="ob-wl miss">${esc(shown)}</span>`
+        last = m.index + m[0].length
+      }
+      return out + esc(text.slice(last))
+    }
     const props = Object.entries(n.props || {}).map(([k, v]) => `<span>${esc(k)}</span><span>${linked(Array.isArray(v) ? v.join(', ') : String(v))}</span>`).join('')
     return `<div class="ob-path">${esc(n.path)} · <a data-ext href="${esc('obsidian://open?path=' + encodeURIComponent(root + '/' + n.path))}">Open in Obsidian ↗</a></div>
       <div class="ob-h1">${esc(n.title)}</div>
@@ -240,11 +281,19 @@ export function apply(ctx) {
       ${n.backlinks.map((b) => `<div class="ob-bl"><button data-ob-open="${esc(b.path)}" data-ob-vault="${esc(vault)}">${esc(b.title)}</button>${b.line ? `<div class="set-sub">${esc(b.line)}</div>` : ''}</div>`).join('') || '<p class="set-sub">No note links here.</p>'}
       ${n.tags.length ? `<div class="ob-h4">Tags</div><div>${n.tags.map((t) => `<button class="ob-tag" data-ob-tag="${esc(t)}">#${esc(t)}</button>`).join('')}</div>` : ''}
       ${n.in_echo.length ? `<div class="ob-h4">In Echo</div>${n.in_echo.map((x) => `<div class="ob-bl"><button data-ob-echo="${esc(x.kind === 'client' ? `client/${x.id}/overview` : `project/${x.id}/brief`)}">${esc(x.name)}</button> <span class="set-sub">${x.kind === 'client' ? 'client' : 'thread'}</span></div>`).join('')}` : ''}`
-  const graphHtml = () => `<div class="ob-gbar"><span class="ob-seg">${[['links', 'Links'], ['tags', 'Tags'], ['both', 'Both']].map(([k, l]) => `<button class="${A.gmode === k ? 'on' : ''}" data-ob-gmode="${k}">${l}</button>`).join('')}</span>
+  const groupsOf = (gd) => {
+    const groups = {}
+    for (const x of gd.nodes) {
+      const grp = x.tag ? '#tags' : A.color === 'tag' ? (x.tags[0] ? '#' + x.tags[0] : '(no tag)') : x.folder
+      if (!groups[grp]) groups[grp] = x.tag ? '#8a8a95' : PAL[Object.keys(groups).filter((k) => k !== '#tags').length % PAL.length]
+    }
+    return groups
+  }
+  const graphHtml = (vault) => `<div class="ob-gbar"><span class="ob-seg">${[['links', 'Links'], ['tags', 'Tags'], ['both', 'Both']].map(([k, l]) => `<button class="${A.gmode === k ? 'on' : ''}" data-ob-gmode="${k}">${l}</button>`).join('')}</span>
       <span class="set-sub">Colour by</span><span class="ob-seg">${[['folder', 'Folder'], ['tag', 'Tag']].map(([k, l]) => `<button class="${A.color === k ? 'on' : ''}" data-ob-color="${k}">${l}</button>`).join('')}</span>
       <input class="search" id="ob-gfind" placeholder="Find a note or tag" aria-label="Find in the graph" style="width:200px" value="${esc(A.gq || '')}"></div>
-      <div class="ob-full"><div class="ob-gbox" id="ob-g-full"></div>${A.legend || ''}</div>`
-  ctx.activities.add({
+      <div class="ob-full"><div class="ob-gbox" id="ob-g-full"></div>${(() => { const gd = A.graph[`${vault}|${A.gmode}`]; return gd ? `<div class="ob-legend">${Object.entries(groupsOf(gd)).slice(0, 12).map(([k, c]) => `<span><i style="background:${c}"></i>${esc(k)}</span>`).join('')}</div>` : '' })()}</div>`
+  if (ctx.activities) ctx.activities.add({
     id: 'vaults',
     label: 'Obsidian',
     icon: GEM(20),
@@ -255,9 +304,10 @@ export function apply(ctx) {
       const r = route()
       const v = vaults.find((x) => x.id === r.vault) || vaults[0]
       const b = A.browse[v.id]
-      if (!b) { fetchOnce(`b:${v.id}`, async () => { A.browse[v.id] = await ctx.call('browse', { id: v.id }) }); return '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' }
-      if (r.path && !A.open.includes(r.path)) A.open.push(r.path)
-      const cur = r.path && A.tab !== 'graph' ? r.path : A.tab === 'graph' ? 'graph' : A.open[A.open.length - 1] || ''
+      if (!b) { fetchOnce(`b:${v.id}`, async () => { A.browse[v.id] = await ctx.call('browse', { id: v.id }) }); return failed(`b:${v.id}`) || '<div class="skeleton" style="padding:20px"><i></i><i></i><p class="set-sub">Reading the vault…</p></div>' }
+      const open = opened(v.id)
+      if (r.path && r.path !== 'graph' && !open.includes(r.path)) open.push(r.path)
+      const cur = A.tabs[v.id] === 'graph' ? 'graph' : r.path || A.tabs[v.id] || open[open.length - 1] || ''
       const n = cur && cur !== 'graph' ? A.notes[`${v.id}|${cur}`] : null
       if (cur && cur !== 'graph' && !n) fetchOnce(`n:${v.id}|${cur}`, async () => { A.notes[`${v.id}|${cur}`] = await ctx.call('note', { id: v.id, path: cur }) })
       if (cur === 'graph' && !A.graph[`${v.id}|${A.gmode}`]) fetchOnce(`g:${v.id}|${A.gmode}`, async () => { A.graph[`${v.id}|${A.gmode}`] = await ctx.call('graph', { id: v.id, mode: A.gmode }) })
@@ -266,15 +316,16 @@ export function apply(ctx) {
           <input class="search" id="ob-q" placeholder="Search notes" value="${esc(A.q)}" aria-label="Search notes">
           <span class="ob-seg"><button class="${A.side === 'files' ? 'on' : ''}" data-ob-side="files">Files</button><button class="${A.side === 'tags' ? 'on' : ''}" data-ob-side="tags">Tags</button></span></div>
         <div class="ob-tree">${A.side === 'tags' && !A.tag ? b.tags.map((t) => `<button class="ob-fx" data-ob-tag="${esc(t.tag)}">#${esc(t.tag)}<span class="n">${t.n}</span></button>`).join('') || '<p class="set-sub" style="padding:8px">No tags.</p>' : treeHtml(b, v.id, cur)}</div></aside>`
-      const tabs = `<div class="ob-tabs">${A.open.map((p) => { const nn = A.notes[`${v.id}|${p}`]; return `<button class="ob-tab${p === cur ? ' on' : ''}" data-ob-open="${esc(p)}" data-ob-vault="${esc(v.id)}" title="${esc(p)}">${esc(nn ? nn.title : p.split('/').pop().replace(/\.md$/, ''))} <span class="x" data-ob-close="${esc(p)}">×</span></button>` }).join('')}<button class="ob-tab${cur === 'graph' ? ' on' : ''}" data-ob-graph>Graph</button></div>`
-      const body = cur === 'graph' ? graphHtml() : `<div class="ob-body">${n ? noteHtml(n, v.id, v.root) : cur ? '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' : '<p class="set-sub" style="padding-top:24px">Pick a note on the left, or open the Graph.</p>'}</div>`
+      const tabs = `<div class="ob-tabs">${open.map((p) => { const nn = A.notes[`${v.id}|${p}`]; return `<button class="ob-tab${p === cur ? ' on' : ''}" data-ob-open="${esc(p)}" data-ob-vault="${esc(v.id)}" title="${esc(p)}">${esc(nn ? nn.title : p.split('/').pop().replace(/\.md$/, ''))} <span class="x" data-ob-close="${esc(p)}">×</span></button>` }).join('')}<button class="ob-tab${cur === 'graph' ? ' on' : ''}" data-ob-graph>Graph</button></div>`
+      const body = cur === 'graph' ? failed(`g:${v.id}|${A.gmode}`) + graphHtml(v.id) : `<div class="ob-body">${n ? noteHtml(n, v.id, v.root) : cur ? failed(`n:${v.id}|${cur}`) || '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' : '<p class="set-sub" style="padding-top:24px">Pick a note on the left, or open the Graph.</p>'}</div>`
       return `<div class="ob">${side}<section class="ob-mid">${tabs}${body}</section><aside class="ob-right">${rightHtml(n, v.id)}</aside></div>`
     },
     after() {
       if (!data) return
       const r = route(), v = (data.vaults.find((x) => x.id === r.vault) || data.vaults.find((x) => x.confirmed) || {})
       const g = ctx.ui.graph
-      const cur = A.tab === 'graph' ? 'graph' : r.path || A.open[A.open.length - 1] || ''
+      const open = opened(v.id)
+      const cur = A.tabs[v.id] === 'graph' ? 'graph' : r.path || A.tabs[v.id] || open[open.length - 1] || ''
       const n = cur && cur !== 'graph' ? A.notes[`${v.id}|${cur}`] : null
       if (n) {
         g.draw(document.getElementById('ob-g-local'), `obl:${v.id}|${cur}`, () => {
@@ -289,16 +340,15 @@ export function apply(ctx) {
       const gd = cur === 'graph' && A.graph[`${v.id}|${A.gmode}`]
       if (gd) {
         const key = `obg:${v.id}|${A.gmode}|${A.color}`
-        const groups = {}
-        // Each group its own colour, in order (a hash would give two folders one colour).
-        const groupColor = (k) => groups[k] || (groups[k] = PAL[Object.keys(groups).length % PAL.length])
+        // Each group its own colour, in order (a hash would give two folders one colour) — as the legend shows.
+        const groups = groupsOf(gd)
         const st = g.draw(document.getElementById('ob-g-full'), key, () => {
           const G = ctx.ui.newGraph()
           const deg = {}
           for (const [a, b2] of gd.edges) { deg[a] = (deg[a] || 0) + 1; deg[b2] = (deg[b2] || 0) + 1 }
           gd.nodes.forEach((x, i) => {
             const grp = x.tag ? '#tags' : A.color === 'tag' ? (x.tags[0] ? '#' + x.tags[0] : '(no tag)') : x.folder
-            const col = x.tag ? '#8a8a95' : groupColor(grp)
+            const col = groups[grp]
             const d = deg[x.id] || 0
             if (!d && !x.tag && A.gmode !== 'tags') return // orphans hidden
             G.addNode(x.id, { x: Math.cos(i) * (100 + i % 50), y: Math.sin(i) * (100 + i % 50), size: x.tag ? 4 : 3 + Math.sqrt(d) * 1.6, color: col, label: x.title, pinLabel: d > 6, group: grp })
@@ -308,28 +358,28 @@ export function apply(ctx) {
         }, { click: (id) => { if (!id.startsWith('#')) openNote(v.id, id) } })
         // A small vault isn't drawn as a few huge circles: the camera steps back once.
         if (st && st.graph && st.graph.order < 60 && !A.zoomed.has(key)) { A.zoomed.add(key); st.sigma.getCamera().setState({ ratio: 2.2 }) }
-        const legend = `<div class="ob-legend">${Object.entries(groups).slice(0, 12).map(([k, c]) => `<span><i style="background:${c}"></i>${esc(k)}</span>`).join('')}</div>`
-        if (Object.keys(groups).length && A.legend !== legend) { A.legend = legend; ctx.render() }
+
       }
     },
   })
   ctx.listen('click', (ev) => {
-    const t = ev.target.closest && ev.target.closest('[data-ob-open],[data-ob-close],[data-ob-graph],[data-ob-side],[data-ob-tag],[data-ob-fold],[data-ob-gmode],[data-ob-color],[data-ob-echo],[data-ob-settings],[data-ob-browse]')
+    const t = ev.target.closest && ev.target.closest('[data-ob-retry],[data-ob-open],[data-ob-close],[data-ob-graph],[data-ob-side],[data-ob-tag],[data-ob-fold],[data-ob-gmode],[data-ob-color],[data-ob-echo],[data-ob-settings],[data-ob-browse]')
     if (!t) return
     const d = t.dataset
-    if (d.obClose) { ev.stopPropagation(); A.open = A.open.filter((p) => p !== d.obClose); A.tab = A.open[A.open.length - 1] || null; const r = route(); return ctx.go(`obsidian:vaults/${r.vault}${A.tab ? '/' + encodeURIComponent(A.tab) : ''}`) }
+    if (d.obRetry) { delete A.errors[d.obRetry]; return ctx.render() }
+    if (d.obClose) { ev.stopPropagation(); const r = route(), o = opened(r.vault); A.opens[r.vault] = o.filter((p) => p !== d.obClose); const next = A.opens[r.vault][A.opens[r.vault].length - 1] || ''; A.tabs[r.vault] = next; return ctx.go(`obsidian:vaults/${r.vault}${next ? '/' + encodeURIComponent(next) : ''}`) }
     if (d.obOpen) return openNote(d.obVault || route().vault, d.obOpen)
-    if ('obGraph' in d) { A.tab = 'graph'; return ctx.render() }
+    if ('obGraph' in d) { A.tabs[route().vault || (data.vaults.find((x) => x.confirmed) || {}).id] = 'graph'; return ctx.render() }
     if (d.obSide) { A.side = d.obSide; A.tag = ''; return ctx.render() }
     if (d.obTag != null) { A.tag = d.obTag; A.side = 'files'; return ctx.render() }
     if (d.obFold) { A.folded.has(d.obFold) ? A.folded.delete(d.obFold) : A.folded.add(d.obFold); return ctx.render() }
-    if (d.obGmode) { A.gmode = d.obGmode; A.legend = ''; return ctx.render() }
-    if (d.obColor) { A.color = d.obColor; A.legend = ''; return ctx.render() }
+    if (d.obGmode) { A.gmode = d.obGmode; return ctx.render() }
+    if (d.obColor) { A.color = d.obColor; return ctx.render() }
     if (d.obEcho) return ctx.go(d.obEcho)
     if ('obSettings' in d) return ctx.go(`settings/${SECTION}`)
     if (d.obBrowse) return ctx.go(`obsidian:vaults/${d.obBrowse}`)
   })
-  ctx.listen('change', (ev) => { if (ev.target.matches && ev.target.matches('[data-ob-switch]')) { A.open = []; A.tab = null; A.tag = ''; ctx.go(`obsidian:vaults/${ev.target.value}`) } })
+  ctx.listen('change', (ev) => { if (ev.target.matches && ev.target.matches('[data-ob-switch]')) { A.tag = ''; const v = ev.target.value, t = A.tabs[v]; ctx.go(`obsidian:vaults/${v}${t && t !== 'graph' ? '/' + encodeURIComponent(t) : ''}`) } })
   ctx.listen('input', (ev) => {
     if (ev.target.id === 'ob-q') { A.q = ev.target.value; ctx.render(); const el = document.getElementById('ob-q'); if (el) { el.focus(); el.setSelectionRange(A.q.length, A.q.length) } }
     if (ev.target.id === 'ob-gfind') { A.gq = ev.target.value; const r = route(); const st = ctx.ui.graph.live && ctx.ui.graph.live.get('ob-g-full'); if (st) ctx.ui.graph.find('ob-g-full', A.gq) ; void r }
