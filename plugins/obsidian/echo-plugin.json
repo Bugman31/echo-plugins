@@ -1,0 +1,18 @@
+{
+  "id": "obsidian",
+  "name": "Obsidian vault",
+  "version": "0.1.0",
+  "summary": "Keep your Obsidian vault as your second brain: Echo's Brain and Claude read it, and Echo writes your minutes and people into it",
+  "uses": {
+    "brain_source": { "kind": "vault" },
+    "export": { "kind": "vault", "what": ["minutes", "people"] },
+    "sessions": { "read": ["vault"] }
+  },
+  "settings": [
+    { "key": "vault", "label": "Vault", "type": "folder", "help": "The vault's folder (the one holding .obsidian)." },
+    { "key": "skip", "label": "Don't read", "type": "string", "default": ".obsidian/**, .trash/**, templates/**", "help": "Folders or files to leave out, as globs separated by commas." },
+    { "key": "export_folder", "label": "Echo writes into", "type": "string", "default": "Echo", "help": "A folder inside the vault; Echo rewrites only files it wrote there." },
+    { "key": "export_minutes", "label": "Write minutes", "type": "bool", "default": true },
+    { "key": "export_people", "label": "Write people", "type": "bool", "default": true }
+  ]
+}

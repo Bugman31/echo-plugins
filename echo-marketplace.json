@@ -1,0 +1,10 @@
+{
+  "name": "onetest",
+  "owner": "onetest-ai",
+  "featured": ["scheduler", "telegram", "obsidian"],
+  "plugins": [
+    { "id": "scheduler", "source": "./plugins/scheduler", "categories": ["automation"] },
+    { "id": "telegram", "source": "./plugins/telegram", "categories": ["chat"] },
+    { "id": "obsidian", "source": "./plugins/obsidian", "categories": ["knowledge"] }
+  ]
+}

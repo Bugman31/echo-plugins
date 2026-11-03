@@ -1,0 +1,10 @@
+{
+  "id": "scheduler",
+  "name": "Scheduler",
+  "version": "0.1.0",
+  "summary": "Run your own Claude prompts on a schedule — a Monday digest, open asks before a meeting — and get the answer in Telegram, Teams or mail",
+  "uses": {
+    "routines": {},
+    "deliver": { "to": ["telegram", "teams", "mail"] }
+  }
+}
