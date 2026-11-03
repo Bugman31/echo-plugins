@@ -5,7 +5,7 @@
 // Everything goes through the host half (`ctx.call`); the look is Echo's own tokens.
 
 const LABEL = { telegram: 'Telegram', teams: 'Teams', mail: 'Mail' }
-const label = (k) => label(k).charAt(0).toUpperCase() + k.slice(1)
+const label = (k) => LABEL[k] || k.charAt(0).toUpperCase() + k.slice(1)
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_SHORT = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
 const PERMS = [
