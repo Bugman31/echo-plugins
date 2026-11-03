@@ -1,16 +1,12 @@
 {
   "id": "telegram",
   "name": "Telegram",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "summary": "Talk to your Claude · Echo folder session from your phone through your own Telegram bot, while the session is open in Echo",
   "uses": {
-    "channel": {
-      "plugin": "telegram@claude-plugins-official"
-    },
-    "deliver": {
-      "to": [
-        "telegram"
-      ]
-    }
-  }
+    "channel": { "plugin": "telegram@claude-plugins-official" },
+    "deliver": { "to": ["telegram"] }
+  },
+  "main": "main.js",
+  "client": "client.js"
 }
