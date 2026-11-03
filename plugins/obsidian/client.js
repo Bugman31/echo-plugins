@@ -71,12 +71,8 @@ export function apply(ctx) {
   const { esc } = ctx.ui
   let data = null, error = '', sel = null, q = '', editing = null, draft = '', menu = false, removing = false
 
-  if (!document.getElementById('obs-css')) {
-    const st = document.createElement('style')
-    st.id = 'obs-css'
-    st.textContent = CSS
-    document.head.appendChild(st)
-  }
+  // Echo takes its style and listeners out when it is switched off or updated (no doubled clicks after an update).
+  ctx.ui.style(CSS)
   const here = () => { const w = ctx.where(); return w.view === 'settings' && w.section === SECTION }
   const load = async () => {
     try { data = await ctx.call('view'); error = '' } catch (e) { error = e.message }
@@ -167,7 +163,7 @@ export function apply(ctx) {
   ctx.palette.add({ label: 'Obsidian: connect a vault', keywords: 'obsidian vault add connect', run: () => { ctx.go(`settings/${SECTION}`); op('add') } })
 
   const cur = () => data && data.vaults.find((v) => v.id === sel)
-  document.addEventListener('click', async (ev) => {
+  ctx.listen('click', async (ev) => {
     const t = ev.target.closest && ev.target.closest('[data-obs-sel],[data-obs-add],[data-obs-edit],[data-obs-cancel],[data-obs-save],[data-obs-confirm],[data-obs-again],[data-obs-menu],[data-obs-remove],[data-obs-remove-yes],[data-obs-remove-cancel],[data-obs-rename],[data-obs-unbelong],[data-obs-proposed],[data-obs-open]')
     if (!t) { if (menu && here()) { menu = false; ctx.render() } return }
     const d = t.dataset
@@ -201,7 +197,7 @@ export function apply(ctx) {
     if (d.obsUnbelong != null) { const v = cur(); const b = (v.belongs || []).filter((_, i) => i !== +d.obsUnbelong); return op('belongs', { id: v.id, belongs: b }) }
     if (d.obsProposed != null) return op('take_proposed', { id: sel, take: d.obsProposed === '1' })
   })
-  document.addEventListener('change', (ev) => {
+  ctx.listen('change', (ev) => {
     const t = ev.target
     if (t.matches && t.matches('[data-obs-belong]') && t.value) {
       const v = cur()
@@ -209,7 +205,7 @@ export function apply(ctx) {
       op('belongs', { id: v.id, belongs: [...(v.belongs || []), { [kind]: id }] })
     }
   })
-  document.addEventListener('input', (ev) => {
+  ctx.listen('input', (ev) => {
     if (ev.target.id === 'obs-q') { q = ev.target.value; ctx.render(); const el = document.getElementById('obs-q'); if (el) { el.focus(); el.setSelectionRange(q.length, q.length) } }
     if (ev.target.id === 'obs-draft') { draft = ev.target.value; const c = ev.target.closest('.obs-edit') && ev.target.closest('.obs-edit').querySelector('.set-sub'); if (c && ev.target.dataset.obsKey === 'when') c.textContent = `${draft.length}/250 — the only line Claude sees until it opens the vault` }
   })

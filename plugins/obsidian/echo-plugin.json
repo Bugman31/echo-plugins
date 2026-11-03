@@ -5,10 +5,21 @@
   "echo": ">=0.7.2",
   "summary": "Connect the Obsidian vaults you already have: Echo describes each one for Claude, you correct it, and Claude in Echo knows where to look",
   "uses": {
-    "folders": { "what": "Obsidian vaults" },
+    "folders": {
+      "what": "Obsidian vaults"
+    },
     "claude": {},
-    "echo": { "read": ["clients", "threads"] },
-    "sessions": { "plugin": true, "read": true, "hints": true }
+    "echo": {
+      "read": [
+        "clients",
+        "threads"
+      ]
+    },
+    "sessions": {
+      "skills": true,
+      "read": true,
+      "hints": true
+    }
   },
   "main": "main.js",
   "client": "client.js"
