@@ -14,6 +14,46 @@ const KINDS = { engagement: 'Engagement', team: 'Team wiki', personal: 'Personal
 const COLORS = ['#4fb3d9', '#5f8fe0', '#e0a96d', '#b98cff', '#3ccf91', '#e07fa3', '#d9c84f', '#7fd0c0']
 
 const CSS = `
+/* the Obsidian activity */
+.ob { display: grid; grid-template-columns: 250px minmax(0, 1fr) 300px; height: 100%; min-height: 0; }
+.ob-side { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.ob-side .ob-top { padding: 12px 12px 6px; display: flex; flex-direction: column; gap: 6px; }
+.ob-side select, .ob-side input { width: 100%; box-sizing: border-box; }
+.ob-seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 6px; overflow: hidden; align-self: flex-start; }
+.ob-seg button { border: 0; background: none; color: var(--text-2); font: inherit; font-size: 12px; padding: 3px 10px; }
+.ob-seg button.on { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+.ob-tree { overflow: auto; padding: 4px 6px 12px; flex: 1; min-height: 0; }
+.ob-fx { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: none; color: var(--text); font: inherit; font-size: 12.5px; text-align: left; padding: 3px 8px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ob-fx:hover { background: var(--hover); }
+.ob-fx.on { background: var(--accent-soft); font-weight: 600; }
+.ob-fx.d { font-weight: 600; color: var(--text); }
+.ob-fx.sk { color: var(--text-3); }
+.ob-fx .n { margin-left: auto; font-size: 11px; color: var(--text-3); font-weight: 400; }
+.ob-mid { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.ob-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); padding: 0 10px; overflow-x: auto; flex: none; }
+.ob-tab { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 0; background: none; color: var(--text-2); font: inherit; font-size: 12px; border-radius: 6px 6px 0 0; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.ob-tab.on { background: var(--surface-2, var(--bg)); color: var(--text); box-shadow: inset 0 2px 0 var(--accent); }
+.ob-tab .x { opacity: 0.6; }
+.ob-body { overflow: auto; padding: 8px 32px 24px; flex: 1; min-height: 0; }
+.ob-path { font-size: 11.5px; color: var(--text-3); padding-top: 8px; }
+.ob-h1 { font-size: 24px; font-weight: 700; margin: 10px 0 8px; }
+.ob-props { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 12px; font-size: 12.5px; padding: 8px 0 12px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.ob-props span:nth-child(odd) { color: var(--text-3); }
+.ob-wl { border: 0; background: none; color: var(--accent); font: inherit; padding: 0; cursor: pointer; }
+.ob-wl.miss { color: var(--text-3); text-decoration: underline dotted; cursor: default; }
+.ob-tag { display: inline-flex; padding: 0 7px; border-radius: 10px; font-size: 12px; background: var(--accent-soft); color: var(--accent); margin: 0 4px 4px 0; border: 0; font: inherit; }
+.ob-right { border-left: 1px solid var(--line); overflow: auto; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+.ob-h4 { font-size: 10.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-top: 6px; }
+.ob-gbox { height: 220px; border: 1px solid var(--line); border-radius: 8px; position: relative; }
+.ob-full { flex: 1; min-height: 0; position: relative; }
+.ob-full .ob-gbox { position: absolute; inset: 0; height: auto; border: 0; border-radius: 0; }
+.ob-gbar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--line); flex: none; }
+.ob-bl { font-size: 12px; padding: 5px 0; border-top: 1px solid var(--line); }
+.ob-bl button { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; font-weight: 600; text-align: left; }
+.ob-legend { position: absolute; left: 12px; bottom: 12px; background: var(--panel, var(--bg)); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; display: flex; flex-direction: column; gap: 3px; max-height: 40%; overflow: auto; }
+.ob-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 5px; margin-right: 6px; }
+.ob-empty { margin: auto; max-width: 420px; text-align: center; padding-top: 80px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+
 .obs { display: flex; height: 100%; min-height: 0; margin: -24px -28px; }
 .obs-tabs { width: 236px; flex: 0 0 236px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 1px; overflow: auto; padding-bottom: 10px; }
 .obs-tabs .obs-top { display: flex; align-items: center; gap: 8px; padding: 16px 12px 8px; }
@@ -125,6 +165,7 @@ export function apply(ctx) {
     const openUrl = `obsidian://open?path=${encodeURIComponent(v.root)}`
     const head = `<div class="obs-head"><span class="obs-icon">${GEM(22)}</span>
       <div style="flex:1;min-width:0"><div class="obs-name" title="${esc(v.root)}">${esc(v.name)}</div><div class="obs-meta">${meta}</div></div>
+      ${v.confirmed ? `<button class="btn" data-ob-browse="${esc(v.id)}">Browse</button>` : ''}
       <a class="btn obs-ib" data-ext href="${esc(openUrl)}" title="Open in Obsidian" aria-label="Open in Obsidian">↗</a>
       <span class="obs-menu"><button class="btn obs-ib" data-obs-menu aria-label="More">⋯</button>${menu ? `<div class="pop"><button data-obs-again>Read it again</button><button data-obs-rename>Rename…</button><button class="danger" data-obs-remove>Remove from Echo</button></div>` : ''}</span></div>`
     const banner = v.state === 'analysing' ? `<div class="obs-banner busy"><span class="spinner"></span><div style="flex:1"><b>Echo is reading ${esc(v.name)}.</b> It looks at the folders and the first lines of some notes, then Claude describes it — about a minute.</div></div>`
@@ -141,6 +182,158 @@ export function apply(ctx) {
       ${part(v, 'when', 'When Claude looks here', d.when)}${PARTS.map(([k, l]) => part(v, k, l, d[k])).join('')}</section>`
     return `<div class="obs-main">${head}${removeAsk}${banner}${error ? `<p class="error">${esc(error)}</p>` : ''}${insideCard}${desc}</div>`
   }
+
+  // ── the Obsidian activity: browse a vault as Obsidian shows it ──
+  const A = { browse: {}, notes: {}, open: [], tab: null, side: 'files', q: '', tag: '', folded: new Set(), gmode: 'links', color: 'folder', graph: {}, loading: {}, zoomed: new Set() }
+  const PAL = ['#4fb3d9', '#9b78ff', '#e0a96d', '#3ccf91', '#e07fa3', '#5f8fe0', '#d9c84f', '#7fd0c0', '#f0a24a', '#b98cff']
+  const colorOf = (k) => PAL[[...String(k)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % PAL.length]
+  const route = () => { const r = ctx.where().route || ''; const i = r.indexOf('/'); return i < 0 ? { vault: r, path: '' } : { vault: r.slice(0, i), path: decodeURIComponent(r.slice(i + 1)) } }
+  const fetchOnce = (key, fn) => { if (A.loading[key]) return; A.loading[key] = true; fn().catch((e) => { A.error = e.message }).finally(() => { A.loading[key] = false; ctx.render() }) }
+  const openNote = (vault, path) => {
+    if (!A.open.includes(path)) A.open.push(path)
+    A.tab = path
+    ctx.go(`obsidian:vaults/${vault}/${encodeURIComponent(path)}`)
+  }
+  const wikify = (n, vault) => n.html.replace(/⟦wl(\d+)⟧/g, (_, i) => {
+    const w = n.wikilinks[+i]
+    if (!w) return ''
+    return w.path ? `<button class="ob-wl" data-ob-open="${esc(w.path)}" data-ob-vault="${esc(vault)}" title="${esc(w.path)}">${esc(w.shown)}</button>` : `<span class="ob-wl miss" title="Not in this vault yet">${esc(w.shown)}</span>`
+  })
+  const treeHtml = (b, vault, cur) => {
+    const words = A.q.toLowerCase().split(/\s+/).filter(Boolean)
+    let notes = b.notes
+    if (A.tag) notes = notes.filter((n) => n.tags.includes(A.tag))
+    if (words.length) notes = notes.filter((n) => words.every((w) => `${n.title} ${n.path}`.toLowerCase().includes(w)))
+    const item = (n, depth) => `<button class="ob-fx${n.path === cur ? ' on' : ''}${n.skip ? ' sk' : ''}" style="padding-left:${8 + depth * 12}px" data-ob-open="${esc(n.path)}" data-ob-vault="${esc(vault)}" title="${esc(n.path)}">${esc(n.title)}</button>`
+    if (words.length || A.tag) return (A.tag ? `<button class="ob-fx d" data-ob-tag="">#${esc(A.tag)} <span class="n">clear ×</span></button>` : '') + notes.map((n) => item(n, 0)).join('') || '<p class="set-sub" style="padding:8px">Nothing matches.</p>'
+    // Folders as a tree, notes under them.
+    const root = { dirs: {}, notes: [] }
+    for (const n of notes) {
+      let d = root
+      for (const part of (n.folder ? n.folder.split('/') : [])) d = d.dirs[part] = d.dirs[part] || { dirs: {}, notes: [] }
+      d.notes.push(n)
+    }
+    const count = (d) => d.notes.length + Object.values(d.dirs).reduce((k, x) => k + count(x), 0)
+    const walk = (d, prefix, depth) => Object.keys(d.dirs).sort().map((name) => {
+      const key = prefix ? `${prefix}/${name}` : name, sub = d.dirs[name], shut = A.folded.has(key)
+      const sk = depth === 0 && b.notes.some((n) => n.skip && n.path.startsWith(name + '/'))
+      return `<button class="ob-fx d${sk ? ' sk' : ''}" style="padding-left:${8 + depth * 12}px" data-ob-fold="${esc(key)}">${shut ? '▸' : '▾'} ${esc(name)}${sk ? ' · left alone' : ''}<span class="n">${count(sub)}</span></button>${shut ? '' : walk(sub, key, depth + 1) + sub.notes.map((n) => item(n, depth + 1)).join('')}`
+    }).join('')
+    return walk(root, '', 0) + root.notes.map((n) => item(n, 0)).join('')
+  }
+  const noteHtml = (n, vault, root) => {
+    // A property's [[links]] open their note here.
+    const linked = (text) => esc(text).replace(/\[\[([^\]]+)\]\]/g, (all, raw) => {
+      const target = raw.split('|')[0].split('#')[0].trim(), path = (n.prop_links || {})[target]
+      const shown = (raw.split('|')[1] || target).trim()
+      return path ? `<button class="ob-wl" data-ob-open="${esc(path)}" data-ob-vault="${esc(vault)}">${shown}</button>` : `<span class="ob-wl miss">${shown}</span>`
+    })
+    const props = Object.entries(n.props || {}).map(([k, v]) => `<span>${esc(k)}</span><span>${linked(Array.isArray(v) ? v.join(', ') : String(v))}</span>`).join('')
+    return `<div class="ob-path">${esc(n.path)} · <a data-ext href="${esc('obsidian://open?path=' + encodeURIComponent(root + '/' + n.path))}">Open in Obsidian ↗</a></div>
+      <div class="ob-h1">${esc(n.title)}</div>
+      ${props ? `<div class="ob-props">${props}</div>` : ''}
+      <div class="doc">${wikify(n, vault)}</div>`
+  }
+  const rightHtml = (n, vault) => !n ? '<p class="set-sub">Open a note to see what links to it.</p>' : `
+      <div class="ob-h4">Local graph</div><div class="ob-gbox" id="ob-g-local"></div>
+      <div class="ob-h4">Backlinks · ${n.backlinks.length}</div>
+      ${n.backlinks.map((b) => `<div class="ob-bl"><button data-ob-open="${esc(b.path)}" data-ob-vault="${esc(vault)}">${esc(b.title)}</button>${b.line ? `<div class="set-sub">${esc(b.line)}</div>` : ''}</div>`).join('') || '<p class="set-sub">No note links here.</p>'}
+      ${n.tags.length ? `<div class="ob-h4">Tags</div><div>${n.tags.map((t) => `<button class="ob-tag" data-ob-tag="${esc(t)}">#${esc(t)}</button>`).join('')}</div>` : ''}
+      ${n.in_echo.length ? `<div class="ob-h4">In Echo</div>${n.in_echo.map((x) => `<div class="ob-bl"><button data-ob-echo="${esc(x.kind === 'client' ? `client/${x.id}/overview` : `project/${x.id}/brief`)}">${esc(x.name)}</button> <span class="set-sub">${x.kind === 'client' ? 'client' : 'thread'}</span></div>`).join('')}` : ''}`
+  const graphHtml = () => `<div class="ob-gbar"><span class="ob-seg">${[['links', 'Links'], ['tags', 'Tags'], ['both', 'Both']].map(([k, l]) => `<button class="${A.gmode === k ? 'on' : ''}" data-ob-gmode="${k}">${l}</button>`).join('')}</span>
+      <span class="set-sub">Colour by</span><span class="ob-seg">${[['folder', 'Folder'], ['tag', 'Tag']].map(([k, l]) => `<button class="${A.color === k ? 'on' : ''}" data-ob-color="${k}">${l}</button>`).join('')}</span>
+      <input class="search" id="ob-gfind" placeholder="Find a note or tag" aria-label="Find in the graph" style="width:200px" value="${esc(A.gq || '')}"></div>
+      <div class="ob-full"><div class="ob-gbox" id="ob-g-full"></div>${A.legend || ''}</div>`
+  ctx.activities.add({
+    id: 'vaults',
+    label: 'Obsidian',
+    icon: GEM(20),
+    render() {
+      if (!data) { if (!error) load(); return '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' }
+      const vaults = data.vaults.filter((v) => v.confirmed || v.state === 'ready')
+      if (!vaults.length) return `<div class="ob-empty"><span class="obs-icon">${GEM(22)}</span><h2 style="margin:0">No vault to browse yet</h2><p class="set-sub">Connect a vault you already have; once you confirm what Echo tells Claude about it, it opens here.</p><button class="btn primary" data-ob-settings>Connect a vault</button></div>`
+      const r = route()
+      const v = vaults.find((x) => x.id === r.vault) || vaults[0]
+      const b = A.browse[v.id]
+      if (!b) { fetchOnce(`b:${v.id}`, async () => { A.browse[v.id] = await ctx.call('browse', { id: v.id }) }); return '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' }
+      if (r.path && !A.open.includes(r.path)) A.open.push(r.path)
+      const cur = r.path && A.tab !== 'graph' ? r.path : A.tab === 'graph' ? 'graph' : A.open[A.open.length - 1] || ''
+      const n = cur && cur !== 'graph' ? A.notes[`${v.id}|${cur}`] : null
+      if (cur && cur !== 'graph' && !n) fetchOnce(`n:${v.id}|${cur}`, async () => { A.notes[`${v.id}|${cur}`] = await ctx.call('note', { id: v.id, path: cur }) })
+      if (cur === 'graph' && !A.graph[`${v.id}|${A.gmode}`]) fetchOnce(`g:${v.id}|${A.gmode}`, async () => { A.graph[`${v.id}|${A.gmode}`] = await ctx.call('graph', { id: v.id, mode: A.gmode }) })
+      const side = `<aside class="ob-side"><div class="ob-top">
+          ${vaults.length > 1 ? `<select class="set-in" data-ob-switch aria-label="Vault">${vaults.map((x) => `<option value="${esc(x.id)}"${x.id === v.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` : `<b style="font-size:14px">${esc(v.name)}</b>`}
+          <input class="search" id="ob-q" placeholder="Search notes" value="${esc(A.q)}" aria-label="Search notes">
+          <span class="ob-seg"><button class="${A.side === 'files' ? 'on' : ''}" data-ob-side="files">Files</button><button class="${A.side === 'tags' ? 'on' : ''}" data-ob-side="tags">Tags</button></span></div>
+        <div class="ob-tree">${A.side === 'tags' && !A.tag ? b.tags.map((t) => `<button class="ob-fx" data-ob-tag="${esc(t.tag)}">#${esc(t.tag)}<span class="n">${t.n}</span></button>`).join('') || '<p class="set-sub" style="padding:8px">No tags.</p>' : treeHtml(b, v.id, cur)}</div></aside>`
+      const tabs = `<div class="ob-tabs">${A.open.map((p) => { const nn = A.notes[`${v.id}|${p}`]; return `<button class="ob-tab${p === cur ? ' on' : ''}" data-ob-open="${esc(p)}" data-ob-vault="${esc(v.id)}" title="${esc(p)}">${esc(nn ? nn.title : p.split('/').pop().replace(/\.md$/, ''))} <span class="x" data-ob-close="${esc(p)}">×</span></button>` }).join('')}<button class="ob-tab${cur === 'graph' ? ' on' : ''}" data-ob-graph>Graph</button></div>`
+      const body = cur === 'graph' ? graphHtml() : `<div class="ob-body">${n ? noteHtml(n, v.id, v.root) : cur ? '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' : '<p class="set-sub" style="padding-top:24px">Pick a note on the left, or open the Graph.</p>'}</div>`
+      return `<div class="ob">${side}<section class="ob-mid">${tabs}${body}</section><aside class="ob-right">${rightHtml(n, v.id)}</aside></div>`
+    },
+    after() {
+      if (!data) return
+      const r = route(), v = (data.vaults.find((x) => x.id === r.vault) || data.vaults.find((x) => x.confirmed) || {})
+      const g = ctx.ui.graph
+      const cur = A.tab === 'graph' ? 'graph' : r.path || A.open[A.open.length - 1] || ''
+      const n = cur && cur !== 'graph' ? A.notes[`${v.id}|${cur}`] : null
+      if (n) {
+        g.draw(document.getElementById('ob-g-local'), `obl:${v.id}|${cur}`, () => {
+          const G = ctx.ui.newGraph()
+          n.local.nodes.forEach((x, i) => G.addNode(x.id, { x: Math.cos(i * 2.4) * 50, y: Math.sin(i * 2.4) * 50, size: x.me ? 9 : 5, color: x.me ? '#9b78ff' : colorOf(x.folder || '-'), label: x.title, pinLabel: true }))
+          for (const [a, b2] of n.local.edges) if (G.hasNode(a) && G.hasNode(b2) && !G.hasEdge(a, b2)) G.addEdge(a, b2, { size: 1, color: '#8a8a9566' })
+          return G
+        }, { click: (id) => { if (id !== cur) openNote(v.id, id) } })
+        const ls = g.live && g.live.get('ob-g-local')
+        if (ls && !A.zoomed.has(`obl:${v.id}|${cur}`)) { A.zoomed.add(`obl:${v.id}|${cur}`); ls.sigma.getCamera().setState({ ratio: 1.6 }) }
+      }
+      const gd = cur === 'graph' && A.graph[`${v.id}|${A.gmode}`]
+      if (gd) {
+        const key = `obg:${v.id}|${A.gmode}|${A.color}`
+        const groups = {}
+        // Each group its own colour, in order (a hash would give two folders one colour).
+        const groupColor = (k) => groups[k] || (groups[k] = PAL[Object.keys(groups).length % PAL.length])
+        const st = g.draw(document.getElementById('ob-g-full'), key, () => {
+          const G = ctx.ui.newGraph()
+          const deg = {}
+          for (const [a, b2] of gd.edges) { deg[a] = (deg[a] || 0) + 1; deg[b2] = (deg[b2] || 0) + 1 }
+          gd.nodes.forEach((x, i) => {
+            const grp = x.tag ? '#tags' : A.color === 'tag' ? (x.tags[0] ? '#' + x.tags[0] : '(no tag)') : x.folder
+            const col = x.tag ? '#8a8a95' : groupColor(grp)
+            const d = deg[x.id] || 0
+            if (!d && !x.tag && A.gmode !== 'tags') return // orphans hidden
+            G.addNode(x.id, { x: Math.cos(i) * (100 + i % 50), y: Math.sin(i) * (100 + i % 50), size: x.tag ? 4 : 3 + Math.sqrt(d) * 1.6, color: col, label: x.title, pinLabel: d > 6, group: grp })
+          })
+          for (const [a, b2] of gd.edges) if (G.hasNode(a) && G.hasNode(b2) && a !== b2 && !G.hasEdge(a, b2)) G.addEdge(a, b2, { size: 0.6, color: '#8a8a9544' })
+          return G
+        }, { click: (id) => { if (!id.startsWith('#')) openNote(v.id, id) } })
+        // A small vault isn't drawn as a few huge circles: the camera steps back once.
+        if (st && st.graph && st.graph.order < 60 && !A.zoomed.has(key)) { A.zoomed.add(key); st.sigma.getCamera().setState({ ratio: 2.2 }) }
+        const legend = `<div class="ob-legend">${Object.entries(groups).slice(0, 12).map(([k, c]) => `<span><i style="background:${c}"></i>${esc(k)}</span>`).join('')}</div>`
+        if (Object.keys(groups).length && A.legend !== legend) { A.legend = legend; ctx.render() }
+      }
+    },
+  })
+  ctx.listen('click', (ev) => {
+    const t = ev.target.closest && ev.target.closest('[data-ob-open],[data-ob-close],[data-ob-graph],[data-ob-side],[data-ob-tag],[data-ob-fold],[data-ob-gmode],[data-ob-color],[data-ob-echo],[data-ob-settings],[data-ob-browse]')
+    if (!t) return
+    const d = t.dataset
+    if (d.obClose) { ev.stopPropagation(); A.open = A.open.filter((p) => p !== d.obClose); A.tab = A.open[A.open.length - 1] || null; const r = route(); return ctx.go(`obsidian:vaults/${r.vault}${A.tab ? '/' + encodeURIComponent(A.tab) : ''}`) }
+    if (d.obOpen) return openNote(d.obVault || route().vault, d.obOpen)
+    if ('obGraph' in d) { A.tab = 'graph'; return ctx.render() }
+    if (d.obSide) { A.side = d.obSide; A.tag = ''; return ctx.render() }
+    if (d.obTag != null) { A.tag = d.obTag; A.side = 'files'; return ctx.render() }
+    if (d.obFold) { A.folded.has(d.obFold) ? A.folded.delete(d.obFold) : A.folded.add(d.obFold); return ctx.render() }
+    if (d.obGmode) { A.gmode = d.obGmode; A.legend = ''; return ctx.render() }
+    if (d.obColor) { A.color = d.obColor; A.legend = ''; return ctx.render() }
+    if (d.obEcho) return ctx.go(d.obEcho)
+    if ('obSettings' in d) return ctx.go(`settings/${SECTION}`)
+    if (d.obBrowse) return ctx.go(`obsidian:vaults/${d.obBrowse}`)
+  })
+  ctx.listen('change', (ev) => { if (ev.target.matches && ev.target.matches('[data-ob-switch]')) { A.open = []; A.tab = null; A.tag = ''; ctx.go(`obsidian:vaults/${ev.target.value}`) } })
+  ctx.listen('input', (ev) => {
+    if (ev.target.id === 'ob-q') { A.q = ev.target.value; ctx.render(); const el = document.getElementById('ob-q'); if (el) { el.focus(); el.setSelectionRange(A.q.length, A.q.length) } }
+    if (ev.target.id === 'ob-gfind') { A.gq = ev.target.value; const r = route(); const st = ctx.ui.graph.live && ctx.ui.graph.live.get('ob-g-full'); if (st) ctx.ui.graph.find('ob-g-full', A.gq) ; void r }
+  })
 
   ctx.settings.section({
     id: 'main',

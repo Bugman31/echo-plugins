@@ -326,6 +326,135 @@ export function apply(ctx) {
       .map(({ v, d }) => ({ name: v.name, folder: v.root, when: d.when, description: ctx.store.path(descPath(v.id)) }))
   })
 
+  // ── browsing a vault (the Obsidian activity): an index of its notes, rebuilt only for what changed ──
+  const indexes = new Map() // vault id → {sig, notes: Map(path → note), byName: Map(lower name → path)}
+  const parseFrontmatter = (text) => {
+    const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text)
+    if (!m) return { props: {}, body: text }
+    const props = {}
+    let key = null
+    for (const line of m[1].split(/\r?\n/)) {
+      const kv = /^([A-Za-z][\w -]*):\s*(.*)$/.exec(line)
+      if (kv) {
+        key = kv[1].trim()
+        let v = kv[2].trim()
+        if (/^\[.*\]$/.test(v)) v = v.slice(1, -1).split(',').map((x) => x.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
+        else v = v.replace(/^["']|["']$/g, '')
+        props[key] = v === '' ? [] : v
+      } else if (key && /^\s*-\s+/.test(line)) {
+        if (!Array.isArray(props[key])) props[key] = props[key] ? [props[key]] : []
+        props[key].push(line.replace(/^\s*-\s+/, '').trim().replace(/^["']|["']$/g, ''))
+      }
+    }
+    return { props, body: text.slice(m[0].length) }
+  }
+  const linkTarget = (raw) => raw.split('|')[0].split('#')[0].trim()
+  const noteOf = (path, text, mtime) => {
+    const { props, body } = parseFrontmatter(text)
+    const tags = new Set()
+    for (const t of [].concat(props.tags || props.tag || [])) if (t) tags.add(String(t).replace(/^#/, ''))
+    for (const m of body.matchAll(/(?:^|[\s(])#([A-Za-z][\w/-]{1,60})/g)) tags.add(m[1])
+    const links = [...new Set([...body.matchAll(/!?\[\[([^\]]+)\]\]/g)].map((m) => linkTarget(m[1])).filter(Boolean))]
+    const name = path.split('/').pop().replace(/\.md$/i, '')
+    return { path, name, title: typeof props.title === 'string' && props.title ? props.title : name, folder: path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '', props, tags: [...tags], links, mtime }
+  }
+  const index = async (v) => {
+    const files = await ctx.fs.walk(v.root, { ext: ['md'], max: 50000 })
+    const sig = `${files.length}:${files.reduce((n, f) => Math.max(n, f.mtime || 0), 0)}`
+    const old = indexes.get(v.id)
+    if (old && old.sig === sig) return old
+    const notes = new Map()
+    for (const f of files) {
+      const prev = old && old.notes.get(f.path)
+      if (prev && prev.mtime === f.mtime) { notes.set(f.path, prev); continue }
+      let text = ''
+      try { text = ctx.fs.read(v.root, f.path, 400000) } catch { continue }
+      notes.set(f.path, noteOf(f.path, text, f.mtime))
+    }
+    const byName = new Map()
+    for (const n of notes.values()) {
+      byName.set(n.name.toLowerCase(), n.path)
+      byName.set(n.path.replace(/\.md$/i, '').toLowerCase(), n.path)
+    }
+    const ix = { sig, notes, byName }
+    indexes.set(v.id, ix)
+    return ix
+  }
+  const resolve = (ix, target) => ix.byName.get(target.toLowerCase()) || ix.byName.get(target.split('/').pop().toLowerCase()) || null
+  const vaultOf = (id) => { const v = load().find((x) => x.id === id); if (!v) throw new Error('no such vault'); return v }
+  const skipped = (v) => new Set((v.inside || []).filter((f) => f.skip).map((f) => f.name))
+  ctx.command('browse', async ({ id }) => {
+    const v = vaultOf(id)
+    const ix = await index(v)
+    const sk = skipped(v)
+    const tags = {}
+    for (const n of ix.notes.values()) for (const t of n.tags) tags[t] = (tags[t] || 0) + 1
+    return {
+      vault: { id: v.id, name: v.name, root: v.root, belongs: v.belongs || [] },
+      notes: [...ix.notes.values()].map((n) => ({ path: n.path, title: n.title, folder: n.folder, skip: sk.has(n.path.split('/')[0]), tags: n.tags })).sort((a, b) => a.path.localeCompare(b.path)),
+      tags: Object.entries(tags).sort((a, b) => b[1] - a[1]).map(([tag, n]) => ({ tag, n })),
+    }
+  })
+  ctx.command('note', async ({ id, path }) => {
+    const v = vaultOf(id)
+    const ix = await index(v)
+    const n = ix.notes.get(path)
+    if (!n) throw new Error('no such note')
+    const text = ctx.fs.read(v.root, path, 400000)
+    const { body } = parseFrontmatter(text)
+    // Wikilinks become markers the window turns into links (Echo's Markdown writer keeps only https links).
+    const wl = []
+    const md = body.replace(/(!?)\[\[([^\]]+)\]\]/g, (_, bang, raw) => {
+      const target = linkTarget(raw)
+      const shown = (raw.split('|')[1] || target).trim()
+      wl.push({ target, path: resolve(ix, target), shown, embed: !!bang })
+      return `⟦wl${wl.length - 1}⟧`
+    })
+    const backlinks = []
+    for (const o of ix.notes.values()) {
+      if (o.path === path || !o.links.some((l) => resolve(ix, l) === path)) continue
+      let line = ''
+      try {
+        const t = ctx.fs.read(v.root, o.path, 200000)
+        line = (t.split('\n').find((l) => /\[\[[^\]]+\]\]/.test(l) && [...l.matchAll(/\[\[([^\]]+)\]\]/g)].some((m) => resolve(ix, linkTarget(m[1])) === path)) || '').trim().slice(0, 200)
+      } catch { /* unreadable */ }
+      backlinks.push({ path: o.path, title: o.title, line: line.replace(/!?\[\[([^\]]+)\]\]/g, (_, raw) => (raw.split('|')[1] || linkTarget(raw)).trim()) })
+    }
+    const out = [...new Set(n.links.map((l) => resolve(ix, l)).filter(Boolean))]
+    const nodes = [{ id: path, title: n.title, folder: n.folder, me: true }]
+    for (const p of [...out, ...backlinks.map((b) => b.path)]) if (!nodes.some((x) => x.id === p)) nodes.push({ id: p, title: ix.notes.get(p).title, folder: ix.notes.get(p).folder })
+    const edges = [...out.map((p) => [path, p]), ...backlinks.map((b) => [b.path, path])]
+    // The same person, client or thread in Echo, by name.
+    const clients = ctx.echo.read('clients'), threads = ctx.echo.read('threads')
+    const lc = (x) => String(x || '').toLowerCase()
+    const inEcho = [
+      ...clients.filter((c) => lc(c.name) === lc(n.title) || (c.aliases || []).some((a) => lc(a) === lc(n.title))).map((c) => ({ kind: 'client', id: c.id, name: c.name })),
+      ...threads.filter((t) => lc(t.name) === lc(n.title)).map((t) => ({ kind: 'thread', id: t.id, name: t.name })),
+    ]
+    // Properties that link (`company: "[[Acme]]"`): where each link leads.
+    const propLinks = {}
+    for (const val of Object.values(n.props)) for (const x of [].concat(val)) for (const mm of String(x).matchAll(/\[\[([^\]]+)\]\]/g)) propLinks[linkTarget(mm[1])] = resolve(ix, linkTarget(mm[1]))
+    // A body that starts with its own title as a heading doesn't show it twice.
+    const html = ctx.markdown(md).replace(new RegExp(`^\\s*<h1[^>]*>${n.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/&/g, '&amp;').replace(/</g, '&lt;')}</h1>`), '')
+    return { path, title: n.title, folder: n.folder, props: n.props, prop_links: propLinks, tags: n.tags, html, wikilinks: wl, backlinks, local: { nodes, edges }, in_echo: inEcho, root: v.root }
+  })
+  ctx.command('graph', async ({ id, mode }) => {
+    const v = vaultOf(id)
+    const ix = await index(v)
+    const sk = skipped(v)
+    const notes = [...ix.notes.values()].filter((n) => !sk.has(n.path.split('/')[0]))
+    const nodes = notes.map((n) => ({ id: n.path, title: n.title, folder: n.folder.split('/')[0] || '(top level)', tags: n.tags }))
+    const ids = new Set(nodes.map((n) => n.id))
+    const edges = []
+    if (mode !== 'tags') for (const n of notes) for (const l of n.links) { const p = resolve(ix, l); if (p && p !== n.path && ids.has(p)) edges.push([n.path, p]) }
+    if (mode !== 'links') {
+      const tags = new Set(notes.flatMap((n) => n.tags))
+      for (const t of tags) nodes.push({ id: `#${t}`, title: `#${t}`, tag: true })
+      for (const n of notes) for (const t of n.tags) edges.push([n.path, `#${t}`])
+    }
+    return { nodes, edges }
+  })
+
   // At every start: an analysis Echo quit during is run again; what Claude gets is rebuilt.
   const vs = load()
   for (const v of vs.filter((x) => x.state === 'analysing')) analyse(v.id).catch(() => {})
