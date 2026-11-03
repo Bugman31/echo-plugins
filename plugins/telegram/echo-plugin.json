@@ -1,16 +1,31 @@
 {
   "id": "telegram",
   "name": "Telegram",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "summary": "Your own Telegram bot: Echo sends you things there, and you talk to your Claude · Echo folder session from your phone while it is open",
   "uses": {
-    "deliver_provider": { "kinds": ["telegram"] },
-    "network": { "hosts": ["api.telegram.org"] },
-    "channel": { "plugin": "telegram@claude-plugins-official" }
+    "deliver_provider": {
+      "kinds": [
+        "telegram"
+      ]
+    },
+    "network": {
+      "hosts": [
+        "api.telegram.org"
+      ]
+    },
+    "channel": {
+      "plugin": "telegram@claude-plugins-official"
+    }
   },
   "main": "main.js",
   "client": "client.js",
   "settings": [
-    { "key": "bot_token", "label": "Bot token", "type": "secret", "help": "From @BotFather: /newbot. Kept on this computer only." }
+    {
+      "key": "bot_token",
+      "label": "Bot token",
+      "type": "secret",
+      "help": "From @BotFather: /newbot. Kept on this computer only."
+    }
   ]
 }

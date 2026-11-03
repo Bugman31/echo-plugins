@@ -4,6 +4,8 @@
 const PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4 3 11l6 2 2 6 3-4 5 4z"/></svg>'
 
 export function apply(ctx) {
+  // Taken out by Echo when the plugin unloads (Echo 0.7.2+); older Echo keeps them on the document.
+  const listen = ctx.listen || ((type, fn, opts) => document.addEventListener(type, fn, opts))
   const { esc, setCard, setRow } = ctx.ui
   let st = null, error = '', busy = '', pairing = false
 
@@ -59,7 +61,7 @@ export function apply(ctx) {
     },
   })
 
-  document.addEventListener('click', async (ev) => {
+  listen('click', async (ev) => {
     const t = ev.target.closest && ev.target.closest('[data-tg-connect],[data-tg-pair],[data-tg-forget],[data-tg-test],[data-tg-recheck],[data-tg-install],[data-tg-open]')
     if (!t) return
     const d = t.dataset

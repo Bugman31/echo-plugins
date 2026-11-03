@@ -100,6 +100,8 @@ textarea.sch-in { height: 260px; padding: 9px 10px; line-height: 1.55; resize: v
 `
 
 export function apply(ctx) {
+  // Taken out by Echo when the plugin unloads (Echo 0.7.2+); older Echo keeps them on the document.
+  const listen = ctx.listen || ((type, fn, opts) => document.addEventListener(type, fn, opts))
   const { esc } = ctx.ui
   let data = null, error = '', sel = null, page = 'list', picker = false
   let runView = null // {id, run, detail, prompt}
@@ -359,7 +361,7 @@ export function apply(ctx) {
   ctx.palette.add({ label: 'Scheduler: routines', keywords: 'routine schedule cron digest', run: () => ctx.go(`settings/${SECTION}`) })
   ctx.palette.add({ label: 'Scheduler: new routine from a template', keywords: 'routine plan monday friday prep', run: () => { page = 'list'; picker = true; ctx.go(`settings/${SECTION}`) } })
 
-  document.addEventListener('click', async (ev) => {
+  listen('click', async (ev) => {
     const t = ev.target.closest && ev.target.closest('[data-sch-sel],[data-sch-on],[data-sch-new],[data-sch-tpl],[data-sch-blank],[data-sch-run],[data-sch-edit],[data-sch-runopen],[data-sch-list],[data-sch-back],[data-sch-prompt],[data-sch-mode],[data-sch-day],[data-sch-to],[data-sch-others],[data-sch-skip],[data-sch-perm],[data-sch-save],[data-sch-del],[data-sch-try],[data-sch-trialclose],[data-sch-open],[data-sch-connect]')
     if (!t) { if (picker && !(ev.target.closest && ev.target.closest('.sch-pick'))) { picker = false; ctx.render() } return }
     const d = t.dataset
@@ -403,8 +405,8 @@ export function apply(ctx) {
     if ('schOpen' in d) { page = 'list'; return ctx.go(`settings/${SECTION}`) }
     if ('schConnect' in d) return ctx.go(d.schConnect ? `settings/${d.schConnect}:main` : 'settings/plugins')
   })
-  document.addEventListener('input', (ev) => { if (page === 'edit' && ev.target && ev.target.id === 'sch-hours') readForm() })
-  document.addEventListener('change', (ev) => { if (page === 'edit' && ev.target && ['sch-time', 'sch-hours'].includes(ev.target.id)) { readForm(); ctx.render() } })
+  listen('input', (ev) => { if (page === 'edit' && ev.target && ev.target.id === 'sch-hours') readForm() })
+  listen('change', (ev) => { if (page === 'edit' && ev.target && ['sch-time', 'sch-hours'].includes(ev.target.id)) { readForm(); ctx.render() } })
 
   load()
 }
