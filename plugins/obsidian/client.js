@@ -124,8 +124,8 @@ export function apply(ctx) {
     const chips = (v.belongs || []).map((b, i) => `<span class="obs-cl">${esc(nameOf(b))}<button data-obs-unbelong="${i}" aria-label="Not for ${esc(nameOf(b))}">×</button></span>`).join('')
     const taken = new Set((v.belongs || []).map((b) => b.client || b.thread))
     const options = [...data.clients.filter((c) => !taken.has(c.id)).map((c) => `<option value="client:${esc(c.id)}">${esc(c.name)}</option>`), ...data.threads.filter((t) => !taken.has(t.id)).map((t) => `<option value="thread:${esc(t.id)}">Thread · ${esc(t.name)}</option>`)].join('')
-    const add = options ? `<select data-obs-belong aria-label="For a client or thread"><option value="">+ for…</option>${options}</select>` : ''
-    const meta = [`<span>${esc(kind)}</span>`, chips || add ? `<span class="sep">·</span><span>for</span>${chips}${add}` : '', v.notes != null ? `<span class="sep">·</span><span>${Number(v.notes).toLocaleString()} notes</span>` : '', v.latest ? `<span class="sep">·</span><span>${ago(v.latest)}</span>` : '', v.git ? '<span class="sep">·</span><span>kept in git</span>' : ''].join('')
+    const add = options ? `<select data-obs-belong aria-label="For a client or thread"><option value="">${chips ? '+' : '+ for a client or thread'}</option>${options}</select>` : ''
+    const meta = [`<span>${esc(kind)}</span>`, chips ? `<span class="sep">·</span><span>for</span>${chips}${add}` : add ? `<span class="sep">·</span>${add}` : '', v.notes != null ? `<span class="sep">·</span><span>${Number(v.notes).toLocaleString()} notes</span>` : '', v.latest ? `<span class="sep">·</span><span>${ago(v.latest)}</span>` : '', v.git ? '<span class="sep">·</span><span>kept in git</span>' : ''].join('')
     const openUrl = `obsidian://open?path=${encodeURIComponent(v.root)}`
     const head = `<div class="obs-head"><span class="obs-icon">${GEM(22)}</span>
       <div style="flex:1;min-width:0"><div class="obs-name" title="${esc(v.root)}">${esc(v.name)}</div><div class="obs-meta">${meta}</div></div>
