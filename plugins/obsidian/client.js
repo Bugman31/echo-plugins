@@ -2,7 +2,7 @@
 // the chosen vault: who it is for, what is inside, and what Claude will be told about it — each part edited in place.
 
 const GEM = (n) => `<svg width="${n}" height="${n}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5 19 8l-2 10-5 3.5L7 18 5 8z"/><path d="M12 2.5 10 12l2 9.5M5 8l5 4 7 6M19 8l-9 4"/></svg>`
-const BRAIN = (n) => `<svg width="${n}" height="${n}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="7" r="2.2"/><circle cx="12" cy="13" r="2.4"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="18.5" r="2.2"/><path d="M7.9 7.2 10.2 11.4M16.2 8.4 13.8 11.5M10.3 14.6 7.6 16.6M13.9 14.6 16.4 17"/></svg>`
+const KNOW = (n) => `<svg width="${n}" height="${n}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="7" r="2.2"/><circle cx="12" cy="13" r="2.4"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="18.5" r="2.2"/><path d="M7.9 7.2 10.2 11.4M16.2 8.4 13.8 11.5M10.3 14.6 7.6 16.6M13.9 14.6 16.4 17"/></svg>`
 const SECTION = 'obsidian:main'
 const PARTS = [
   ['what', 'What it is'],
@@ -342,26 +342,26 @@ export function apply(ctx) {
       browserAfter(data.vaults.filter((v) => v.confirmed || v.state === 'ready'))
     },
   })
-  // The Brain activity: Echo's own vault — what Echo learned from the calls and mail — browsed the same way.
+  // The Knowledge activity: Echo's own vault — what Echo knows about things, from the calls and mail — browsed the same way.
   const echoVaults = () => [{ id: 'echo', name: 'Echo', root: data.knowledge.root }]
   if (ctx.activities) ctx.activities.add({
-    id: 'brain',
-    label: 'Brain',
-    icon: BRAIN(20),
+    id: 'knowledge',
+    label: 'Knowledge',
+    icon: KNOW(20),
     render() {
-      A.base = 'obsidian:brain'
+      A.base = 'obsidian:knowledge'
       if (!data) { if (!error) load(); return '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' }
       fresh()
       const k = data.knowledge || {}
       // Notes written since it was drawn: read again.
       if (k.notes !== A.echoN) { A.echoN = k.notes; delete A.browse.echo; for (const key of Object.keys(A.graph)) if (key.startsWith('echo|')) delete A.graph[key]; for (const key of Object.keys(A.notes)) if (key.startsWith('echo|')) delete A.notes[key] }
-      if (!k.on) return `<div class="ob-empty"><span class="obs-icon">${BRAIN(22)}</span><h2 style="margin:0">Echo’s knowledge is off</h2><p class="set-sub">Turned on, Echo keeps what it learns from your calls and mail — clients, organisations, products, initiatives, documents, each fact with the words it came from — as an Obsidian vault of its own. Claude in Echo answers from it, and you can open it in Obsidian.</p><button class="btn primary" data-ob-knowledge="1">Turn it on</button>${error ? `<p class="error">${esc(error)}</p>` : ''}</div>`
-      if (!k.notes) return `<div class="ob-empty"><span class="obs-icon">${BRAIN(22)}</span><h2 style="margin:0">Nothing here yet</h2><p class="set-sub">Echo’s vault fills as Echo reads your calls and mail. It is a folder of Markdown notes: ${esc(k.root || '')}</p><button class="btn" data-ob-knowledge="0">Turn it off</button></div>`
+      if (!k.on) return `<div class="ob-empty"><span class="obs-icon">${KNOW(22)}</span><h2 style="margin:0">Knowledge is off</h2><p class="set-sub">Turned on, Echo keeps the lasting facts it learns from your calls and mail — clients, organisations, products, initiatives, documents, each with the words it came from in Recall — as an Obsidian vault of its own. Claude in Echo answers from it, and you can open it in Obsidian.</p><button class="btn primary" data-ob-knowledge="1">Turn it on</button>${error ? `<p class="error">${esc(error)}</p>` : ''}</div>`
+      if (!k.notes) return `<div class="ob-empty"><span class="obs-icon">${KNOW(22)}</span><h2 style="margin:0">Nothing here yet</h2><p class="set-sub">Echo’s vault fills as Echo reads your calls and mail. It is a folder of Markdown notes: ${esc(k.root || '')}</p><button class="btn" data-ob-knowledge="0">Turn it off</button></div>`
       return browserHtml(echoVaults())
     },
     after() {
       if (!data || !(data.knowledge || {}).notes) return
-      A.base = 'obsidian:brain'
+      A.base = 'obsidian:knowledge'
       browserAfter(echoVaults())
     },
   })
@@ -436,7 +436,7 @@ export function apply(ctx) {
     if (d.obRetry) { delete A.errors[d.obRetry]; return ctx.render() }
     if (d.obClose) { ev.stopPropagation(); const r = route(), o = opened(r.vault); A.opens[r.vault] = o.filter((p) => p !== d.obClose); const next = A.opens[r.vault][A.opens[r.vault].length - 1] || ''; A.tabs[r.vault] = next; return ctx.go(`${A.base}/${r.vault}${next ? '/' + encodeURIComponent(next) : ''}`) }
     if (d.obOpen) return openNote(d.obVault || route().vault, d.obOpen)
-    if ('obGraph' in d) { A.tabs[route().vault || (A.base === 'obsidian:brain' ? 'echo' : (data.vaults.find((x) => x.confirmed) || {}).id)] = 'graph'; return ctx.render() }
+    if ('obGraph' in d) { A.tabs[route().vault || (A.base === 'obsidian:knowledge' ? 'echo' : (data.vaults.find((x) => x.confirmed) || {}).id)] = 'graph'; return ctx.render() }
     if (d.obSide) { A.side = d.obSide; A.tag = ''; return ctx.render() }
     if (d.obTag != null) { A.tag = d.obTag; A.side = 'files'; return ctx.render() }
     if (d.obFold) { A.folded.has(d.obFold) ? A.folded.delete(d.obFold) : A.folded.add(d.obFold); return ctx.render() }
@@ -471,7 +471,7 @@ export function apply(ctx) {
   })
   ctx.settings.add({ render: () => ctx.ui.setCard('', [
     ctx.ui.setRow('Vaults', `${data ? data.vaults.length : '…'} connected — set them up in their own section.`, '<button class="btn" data-obs-open>Open</button>'),
-    ctx.ui.setRow('Echo’s knowledge', data && data.knowledge && data.knowledge.on ? `On — ${data.knowledge.notes} notes in Echo’s own vault (the Brain activity).` : 'Off — Echo keeps no vault of its own.', data && data.knowledge ? `<button class="btn" data-ob-knowledge="${data.knowledge.on ? '0' : '1'}">${data.knowledge.on ? 'Turn off' : 'Turn on'}</button>` : ''),
+    ctx.ui.setRow('Knowledge', data && data.knowledge && data.knowledge.on ? `On — ${data.knowledge.notes} notes in Echo’s own vault (the Knowledge activity).` : 'Off — Echo keeps no facts of its own; Recall still has everything said.', data && data.knowledge ? `<button class="btn" data-ob-knowledge="${data.knowledge.on ? '0' : '1'}">${data.knowledge.on ? 'Turn off' : 'Turn on'}</button>` : ''),
   ]) })
   ctx.palette.add({ label: 'Obsidian: vaults', keywords: 'obsidian vault notes knowledge', run: () => ctx.go(`settings/${SECTION}`) })
   ctx.palette.add({ label: 'Obsidian: connect a vault', keywords: 'obsidian vault add connect', run: () => { ctx.go(`settings/${SECTION}`); addVault() } })

@@ -216,16 +216,16 @@ export function apply(ctx) {
       let list = names.join(', ')
       if (list.length > 420) { let n = names.length; while (n > 1 && names.slice(0, n).join(', ').length > 380) n--; list = `${names.slice(0, n).join(', ')} and ${names.length - n} more` }
       const theirs = ready.length ? `the user's own Obsidian notes — ${ready.length} vault${ready.length === 1 ? '' : 's'}: ${list}` : ''
-      const echos = echoOn ? 'Echo\'s own knowledge — what Echo learned from the user\'s calls and mail about clients, organisations, products, initiatives and documents' : ''
-      const description = `${[echos, theirs].filter(Boolean).join('; and ')}. Use when the answer may be in ${echoOn ? 'what Echo knows or ' : ''}the user's notes (people, decisions, how things are done, what they know about a client or topic), or to add knowledge to them.`.replace(/^./, (c) => c.toUpperCase()).replace(/[\r\n]+/g, ' ')
+      const echos = echoOn ? 'Knowledge — what Echo knows about things, the lasting facts it learned from the user\'s calls and mail about clients, organisations, products, initiatives and documents' : ''
+      const description = `${[echos, theirs].filter(Boolean).join('; and ')}. Use when the answer may be in ${echoOn ? 'the facts Echo keeps or ' : ''}the user's notes (people, decisions, how things are done, what they know about a client or topic), or to add knowledge to them.`.replace(/^./, (c) => c.toUpperCase()).replace(/[\r\n]+/g, ' ')
       const body = [
         '# The user\'s Obsidian vaults', '',
         ...(echoOn ? [
-          '## Echo\'s own vault', '',
-          `Echo keeps the lasting facts it learned from the user's calls and mail as an Obsidian vault: ${ctx.store.path('vault')} — one note per client, organisation, product, initiative or document, each observation with the exact words and an echo:// link to its source. Its rules: ${ctx.store.path('vault/_echo/Rules.md')}.`,
+          '## Knowledge: what Echo knows about things', '',
+          `Knowledge is what Echo knows about things — the lasting facts it learned from the user's calls and mail, kept as an Obsidian vault: ${ctx.store.path('vault')} — one note per client, organisation, product, initiative or document, each observation with the exact words and an echo:// link to where they were said. Its rules: ${ctx.store.path('vault/_echo/Rules.md')}. Two halves: Recall (Echo's index of everything said — what, where, word for word: calls, mail, posts) and Knowledge (what is known about things, each fact linking back to Recall); Echo's dictionary of names serves both.`,
           `- Things and facts about them: start at ${ctx.store.path('vault/index.md')} (one line per note), then the note; or ask the tools below with "vault": "echo".`,
-          '- People (who someone is, their role, how to reach them) are Echo\'s People: use Echo\'s people tools, not this vault. Tasks and statuses are Echo\'s tasks.',
-          '- What exactly was said: open the observation\'s echo:// link with `echoctl read <link>` (the minutes and the words around that moment), or search Echo\'s sources.',
+          '- People (who someone is, their role, how to reach them): `mcp__echo__find_people`, `mcp__echo__get_person` — not this vault. Tasks and statuses are Echo\'s tasks.',
+          '- What exactly was said: open an observation\'s echo:// link with `mcp__echo__read_link` (the minutes and the words around that moment; `echoctl read <link>` where the tool isn\'t there); for anything Knowledge has no fact on, search Recall: `mcp__echo__search_sources`, then `mcp__echo__read_source`.',
           '- Echo writes this vault itself: read it and cite it (the note, and the echo:// link for the words); don\'t change it.', '',
         ] : []),
         `1. Find the vault: read the catalog, ${ctx.store.path('vaults.md')} — each vault's "when to look here" line, folder and description file. When the window names a vault for the open client or thread, start there.`,
@@ -391,7 +391,7 @@ export function apply(ctx) {
   const ECHO = 'echo' // Echo's own vault's id (a user's vault never gets it: see `add`)
   const EMBED = 1, MDLINK = 2, INPROPS = 4
   const ixPath = (id) => `vaults/${id}/index.json`
-  const indexes = new Map() // vault id → the index in memory
+  const indexes = new Map() // vault id → the index, held while the plugin runs
   const lc = (x) => String(x == null ? '' : x).toLowerCase()
   const unquote = (s) => s.replace(/^["']|["']$/g, '')
   const dirOf = (p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '')
@@ -552,7 +552,7 @@ export function apply(ctx) {
 
   // ── Echo's own vault: the knowledge Echo keeps, in the plugin's store (`vault/`) ──
   // Written by the plugin only (ctx.store), so its index is kept up to date at each write — no walk of the folder.
-  // On while the plugin's `knowledge` setting is on: it is Echo's knowledge then, in the Brain activity and the skill.
+  // On while the plugin's `knowledge` setting is on: it is Knowledge then, in the Knowledge activity and the skill.
   const knowledgeOn = () => { try { return !!ctx.settings.get('knowledge') } catch { return false } }
   const echoVault = () => ({ id: ECHO, name: 'Echo', root: ctx.store.path('vault'), echo: true, confirmed: true, state: 'ready' })
   const vaultPath = (path) => {
@@ -722,7 +722,8 @@ export function apply(ctx) {
   const K_RULES = `# What this vault keeps
 
 Knowledge only. Echo keeps everything else — calls, mail, people, threads, clients, tasks — and this vault links to it with
-\`echo://\` links (open them in Echo; Claude reads them with \`echoctl read <link>\`). Nothing of Echo's is copied here.
+\`echo://\` links to Recall, where everything said is kept (open them in Echo; Claude reads them with Echo's \`read_link\`). Nothing
+of Echo's is copied here.
 
 - **Lasting knowledge** about things: what an organisation, product, initiative or document is; what it uses, needs, decided
   and why; its problems; figures; how it works; who is client, partner, vendor or competitor of whom.
@@ -939,7 +940,7 @@ Knowledge only. Echo keeps everything else — calls, mail, people, threads, cli
       changes.push({ path, text: renderNote(name, x, st.things, ctx.store.read(`vault/${path}`)) })
       x.written = true
     }
-    const lines = ['# Index', '', 'Read this first: one line per note. Open a note, then its sources (echo:// links: `echoctl read <link>`) only for the exact words.', '']
+    const lines = ['# Index', '', 'Read this first: one line per note. Open a note, then its sources (echo:// links, read with Echo\'s `read_link`) only for the exact words.', '']
     for (const [t, folder] of Object.entries(K_TYPES)) {
       const list = Object.entries(st.things).filter(([, x]) => x.type === t && x.written).sort(([a], [b]) => a.localeCompare(b))
       if (list.length) lines.push(`## ${folder}`, ...list.map(([n, x]) => `- [[${safeName(n)}]]${x.summary ? ` — ${String(x.summary).split(/(?<=\.)\s/)[0].slice(0, 160)}` : ''}`), '')
@@ -977,7 +978,7 @@ Knowledge only. Echo keeps everything else — calls, mail, people, threads, cli
       const s = { ...src, kind: src.kind || 'call', title: src.title || src.id, date: String(src.date || '').slice(0, 10), link: src.link || '', turns: turnsOf(src.transcript), check: `${src.check || ''} ${src.transcript || ''}` }
       let p = patch, model = ''
       if (!p) {
-        const out = await ctx.claude.run({ title: `Echo's knowledge: ${s.title}`, prompt: kPrompt(s, named(s, st)), tools: 'none', model: 'sonnet', dir: 'runs/knowledge', timeout: 10 })
+        const out = await ctx.claude.run({ title: `Knowledge: ${s.title}`, prompt: kPrompt(s, named(s, st)), tools: 'none', model: 'sonnet', dir: 'runs/knowledge', timeout: 10 })
         const text = String(out.answer || '')
         p = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1) || '{}')
         model = out.model || ''
