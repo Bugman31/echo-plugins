@@ -1,8 +1,8 @@
 {
   "id": "obsidian",
   "name": "Obsidian vaults",
-  "version": "0.6.3",
-  "echo": ">=0.7.4",
+  "version": "0.7.0",
+  "echo": ">=0.8.0",
   "summary": "Connect the Obsidian vaults you already have: Echo describes each one for Claude, you correct it, and Claude in Echo knows where to look",
   "uses": {
     "folders": {
@@ -12,7 +12,12 @@
     "echo": {
       "read": [
         "clients",
-        "threads"
+        "threads",
+        "dictionary",
+        "sources"
+      ],
+      "write": [
+        "dictionary"
       ]
     },
     "sessions": {
@@ -29,7 +34,7 @@
       "label": "Knowledge",
       "type": "bool",
       "default": false,
-      "help": "Echo keeps the lasting facts it learns from your calls and mail as its own Obsidian vault — the Knowledge activity; Claude in Echo answers from it."
+      "help": "Echo keeps the lasting facts it learns from your calls and mail as its own Obsidian vault — Knowledge → Notes; Claude in Echo answers from it."
     }
   ]
 }

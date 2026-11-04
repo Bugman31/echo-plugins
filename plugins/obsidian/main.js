@@ -276,10 +276,11 @@ export function apply(ctx) {
   }
 
   // ── commands (the window's Settings section, ⌘K, `echoctl plugin call obsidian …`) ──
-  ctx.command('view', () => {
+  ctx.command('view', ({ window } = {}) => {
     recover()
+    if (window) drain() // the app's window: a queue left by a quit goes on
     const vs = load()
-    return { vaults: vs.map((v) => ({ ...v, description: description(v.id), proposed: ctx.store.read(`vaults/${v.id}/proposed.md`) ? parse(ctx.store.read(`vaults/${v.id}/proposed.md`)) : null })), clients: ctx.echo.read('clients'), threads: ctx.echo.read('threads'), knowledge: { on: knowledgeOn(), notes: knowledgeOn() ? echoIndex().notes.size : 0, root: ctx.store.path('vault') } }
+    return { vaults: vs.map((v) => ({ ...v, description: description(v.id), proposed: ctx.store.read(`vaults/${v.id}/proposed.md`) ? parse(ctx.store.read(`vaults/${v.id}/proposed.md`)) : null })), clients: ctx.echo.read('clients'), threads: ctx.echo.read('threads'), knowledge: { on: knowledgeOn(), notes: knowledgeOn() ? echoIndex().notes.size : 0, root: ctx.store.path('vault'), queue: qRead().length, reading: draining, failed: Object.keys(kRead('failed', {})).length } }
   })
   // `add` picks a folder; one with no notes comes back as `check` for the user's yes, then `add {root, anyway}`
   // connects it. One connected already comes back as `already`.
@@ -552,7 +553,7 @@ export function apply(ctx) {
 
   // ── Echo's own vault: the knowledge Echo keeps, in the plugin's store (`vault/`) ──
   // Written by the plugin only (ctx.store), so its index is kept up to date at each write — no walk of the folder.
-  // On while the plugin's `knowledge` setting is on: it is Knowledge then, in the Knowledge activity and the skill.
+  // On while the plugin's `knowledge` setting is on: it is Knowledge then, in Knowledge → Notes and the skill.
   const knowledgeOn = () => { try { return !!ctx.settings.get('knowledge') } catch { return false } }
   const echoVault = () => ({ id: ECHO, name: 'Echo', root: ctx.store.path('vault'), echo: true, confirmed: true, state: 'ready' })
   const vaultPath = (path) => {
@@ -734,6 +735,8 @@ of Echo's is copied here.
 - **An observation**: \`- [category] one sentence — “exact words, ≤ 25” ([source, date](echo://…))\`. No quote, no observation.
 - **A relation**: \`- <type> [[Other thing]]\`, only to notes that exist.
 - **Names** go through the dictionary (aliases) first; a new note only when two sources say it.
+- **Work** (a thread's tasks, decisions and questions) is Echo's: a note points at it with \`echo://task/<thread>/<item>\`,
+  never copies it.
 - **Time**: a newer observation that contradicts an older one doesn't erase it; the older one moves to History.
 - **index.md** lists every note in one line; **log.md** records each source read.
 - Echo writes a note's summary, Observations, Relations and History; anything else in a note is yours and stays.
@@ -783,6 +786,21 @@ of Echo's is copied here.
     }
     return d
   }
+  const termOf = (name, x, terms) => { const mine = new Set([name, ...(x.aliases || [])].map(kn)); return terms.find((t) => termNames(t).some((n) => mine.has(kn(n)))) || null }
+  // Edits in Knowledge → Dictionary reach the notes: a thing with a term takes the term's names as its aliases; every
+  // note is written again once the dictionary changed (looked at when the window looks, and before each reading).
+  const syncDictionary = () => {
+    const terms = coreTerms()
+    if (!terms.length || !knowledgeOn()) return false
+    const h = hashOf(JSON.stringify(terms))
+    if (ctx.store.read('knowledge/dictionary.hash') === h) return false
+    const st = kState()
+    for (const [name, x] of Object.entries(st.things)) { const t = termOf(name, x, terms); if (t) x.aliases = termNames(t).filter((n) => kn(n) !== kn(name)) }
+    kPublish(st, Object.keys(st.things).filter((n) => st.things[n].written), '')
+    kSave(st)
+    ctx.store.write('knowledge/dictionary.hash', h)
+    return true
+  }
   // A name Echo's dictionary doesn't have yet, from a note: written back through Echo (when it lets plugins).
   const teach = (name, x, terms) => {
     const add = ctx.echo && ctx.echo.dictionary && ctx.echo.dictionary.add
@@ -826,13 +844,14 @@ of Echo's is copied here.
   ].join('\n')
 
   // The note as Echo writes it, keeping what the user wrote: their frontmatter keys and their own sections.
-  const renderNote = (name, x, things, old) => {
+  const renderNote = (name, x, things, old, terms = []) => {
     const exists = (to) => { const k = Object.keys(things).find((n) => kn(n) === kn(to) || (things[n].aliases || []).some((a) => kn(a) === kn(to))); return k && (things[k].obs || []).length ? k : null }
     const line = (o) => `- [${o.cat}] ${o.text} — “${o.quote}” ([${o.label}](${o.link}))`
     const rels = [...new Set((x.rels || []).map(([t, to]) => { const k = exists(to); return k && k !== name ? `- ${t} [[${safeName(k)}]]` : null }).filter(Boolean))].sort()
     const threads = (x.threads || []).map(([id, n]) => `[${n}](echo://thread/${id})`).join(', ')
     const prev = old ? parseFrontmatter(old) : { props: {}, body: '' }
-    const fm = { ...prev.props, type: x.type, aliases: x.aliases || [], echo: x.echo || undefined, updated: (x.obs[0] || {}).date }
+    const t = termOf(name, x, terms)
+    const fm = { ...prev.props, type: x.type, aliases: t ? termNames(t).filter((n) => kn(n) !== kn(name)) : x.aliases || [], echo: x.echo || undefined, updated: (x.obs[0] || {}).date }
     const yaml = (v) => (Array.isArray(v) ? `[${v.map((a) => JSON.stringify(String(a))).join(', ')}]` : JSON.stringify(String(v)))
     const head = '---\n' + Object.entries(fm).filter(([, v]) => v != null && v !== '' && !(Array.isArray(v) && !v.length)).map(([k, v]) => `${k}: ${yaml(v)}`).join('\n') + '\n---\n'
     // The user's own sections (any `## ` that isn't Echo's) stay, after Echo's.
@@ -894,7 +913,7 @@ of Echo's is copied here.
         const q = kn(o && o.quote)
         const dup = [...x.obs, ...(x.history || [])].some((y) => kn(y.quote) === q)
         if (!o || q.length < 8 || !check.includes(q) || !K_CATS.includes(o.category) || dup || (removed[key] || []).includes(q)) { dropped++; continue }
-        const t = src.kind === 'call' ? momentOf(src, o.quote) : null
+        const t = src.kind === 'call' || src.kind === 'memo' ? momentOf(src, o.quote) : null
         x.obs.unshift({ cat: o.category, text: String(o.text || '').trim().slice(0, 300), quote: String(o.quote).trim().slice(0, 300), date: src.date, label, link: src.link + (t != null ? `?t=${t}` : ''), src: src.id })
         kept++
         touched.add(key)
@@ -928,7 +947,9 @@ of Echo's is copied here.
   // Write the notes that changed, index.md and the log line; the vault's rules and types the first time.
   const kPublish = (st, touched, logLine) => {
     const changes = []
-    if (ctx.store.read('vault/_echo/Rules.md') == null) {
+    const terms = coreTerms()
+    // The rules and types are Echo's: written again whenever this plugin's change them.
+    if (ctx.store.read('vault/_echo/Rules.md') !== K_RULES) {
       changes.push({ path: '_echo/Rules.md', text: K_RULES })
       for (const [t, folder] of Object.entries(K_TYPES)) changes.push({ path: `_echo/Types/${t[0].toUpperCase() + t.slice(1)}.md`, text: `---\ntype: echo-type\nfolder: ${folder}\n---\n# ${t[0].toUpperCase() + t.slice(1)}\n` })
     }
@@ -937,7 +958,7 @@ of Echo's is copied here.
       if (!x) continue
       const path = notePath(name, x)
       if (!x.obs.length && !(x.history || []).length) { if (x.written) changes.push({ path, text: null }); x.written = false; continue }
-      changes.push({ path, text: renderNote(name, x, st.things, ctx.store.read(`vault/${path}`)) })
+      changes.push({ path, text: renderNote(name, x, st.things, ctx.store.read(`vault/${path}`), terms) })
       x.written = true
     }
     const lines = ['# Index', '', 'Read this first: one line per note. Open a note, then its sources (echo:// links, read with Echo\'s `read_link`) only for the exact words.', '']
@@ -946,7 +967,6 @@ of Echo's is copied here.
       if (list.length) lines.push(`## ${folder}`, ...list.map(([n, x]) => `- [[${safeName(n)}]]${x.summary ? ` — ${String(x.summary).split(/(?<=\.)\s/)[0].slice(0, 160)}` : ''}`), '')
     }
     changes.push({ path: 'index.md', text: lines.join('\n') })
-    const terms = coreTerms()
     if (terms.length) changes.push({ path: '_echo/Dictionary.md', text: ['# Dictionary', '', 'Echo\'s dictionary, mirrored (Echo keeps it: change it in Echo). Each name, then the other names it goes by.', '', ...terms.slice().sort((a, b) => a.name.localeCompare(b.name)).map((t) => `- **${t.name}**${t.kind ? ` (${t.kind})` : ''}${termNames(t).length > 1 ? ` — ${termNames(t).slice(1).join(', ')}` : ''}`)].join('\n') + '\n' })
     if (logLine) changes.push({ path: 'log.md', text: `${(ctx.store.read('vault/log.md') || '# Log\n').replace(/\n*$/, '\n')}- [${new Date().toISOString().slice(0, 10)}] ${logLine}\n` })
     echoWrite(changes)
@@ -957,12 +977,13 @@ of Echo's is copied here.
   const named = (src, st) => {
     const text = ` ${kn(src.text)} `
     const hits = new Map()
-    for (const [n, name] of dictionary(st.things, {})) if (n.length >= 3 && text.includes(` ${n} `)) hits.set(name, (hits.get(name) || 0) + text.split(` ${n} `).length - 1)
+    for (const [n, name] of dictionary(st.things, {})) if (st.things[name] && n.length >= 3 && text.includes(` ${n} `)) hits.set(name, (hits.get(name) || 0) + text.split(` ${n} `).length - 1)
     return [...hits].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name]) => [name, st.things[name]])
   }
   const ingesting = new Set()
-  // One source: {id, kind: call|mail|channel, title, date, text (minutes or the mail's facts), link (echo://…),
-  // threads: [{id, name}], transcript? (a call's, for quotes and moments), check? (more text quotes may come from)}.
+  // One source, as ctx.echo.read('source', id) gives it: {id, kind: call|memo|mail|channel, title, date, text (minutes
+  // or the mail's facts), link (echo://…), threads: [{id, name, client}], profile (the AI profile its text may go to;
+  // null: to none), transcript? (a call's, for quotes and moments), check? (more text quotes may come from)}.
   const ingest = async (src, { force, patch } = {}) => {
     if (!knowledgeOn()) throw new Error('Echo\'s knowledge is off')
     if (!src || !src.id || !src.text) throw new Error('a source: {id, kind, title, date, text, link}')
@@ -973,12 +994,18 @@ of Echo's is copied here.
       takeRemovals(st.things, st.removed)
       const hash = hashOf(`${src.text}\n${src.transcript || ''}\n${src.check || ''}`)
       const was = st.sources[src.id]
-      if (was && was.hash === hash && !force) return { id: src.id, unchanged: true }
+      if (was && was.hash === hash && !was.skipped && !force) return { id: src.id, unchanged: true }
       const touched = was ? dropSource(src.id, st) : []
       const s = { ...src, kind: src.kind || 'call', title: src.title || src.id, date: String(src.date || '').slice(0, 10), link: src.link || '', turns: turnsOf(src.transcript), check: `${src.check || ''} ${src.transcript || ''}` }
       let p = patch, model = ''
+      // Strict routing: the source's text goes only to the AI profile it may go to — to none when it has none.
+      if (!p && 'profile' in src && src.profile == null) {
+        st.sources[src.id] = { hash, at: new Date().toISOString(), title: s.title, skipped: 'no AI profile may read it' }
+        kSave(st)
+        return { id: src.id, skipped: 'no AI profile may read it' }
+      }
       if (!p) {
-        const out = await ctx.claude.run({ title: `Knowledge: ${s.title}`, prompt: kPrompt(s, named(s, st)), tools: 'none', model: 'sonnet', dir: 'runs/knowledge', timeout: 10 })
+        const out = await ctx.claude.run({ title: `Knowledge: ${s.title}`, prompt: kPrompt(s, named(s, st)), tools: 'none', model: 'sonnet', dir: 'runs/knowledge', timeout: 10, ...(src.profile ? { profile: src.profile } : {}) })
         const text = String(out.answer || '')
         p = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1) || '{}')
         model = out.model || ''
@@ -1000,13 +1027,69 @@ of Echo's is copied here.
     kSave(st)
     return { id, notes: touched }
   }
-  // Until Echo hands sources to plugins (ctx.echo.read, its events), a source is given whole — by Echo's own feeder
-  // later, by a terminal now: `echoctl plugin call obsidian ingest '{"source": {...}}'`.
+  // ── the feeder: Echo's sources into Knowledge, one at a time, oldest first ──
+  // Only in the app: Echo's events (a call's minutes written, Recall's mail synced) and the window's look at the view
+  // start it. A terminal's `echoctl plugin call` loads the plugin anew and never runs Claude for the queue.
+  const qRead = () => kRead('queue', [])
+  let draining = false
+  // Queued only: the reading is started by the app's events and its window (`view {window: true}`, `knowledge_wake` each
+  // minute), never here — a terminal's `knowledge_fill` queues and leaves the reading to the app.
+  const enqueue = (ids) => {
+    const q = qRead()
+    for (const id of ids) if (id && !q.includes(id)) q.push(id)
+    kWrite('queue', q)
+    return q.length
+  }
+  const drain = async () => {
+    if (draining || !knowledgeOn()) return
+    draining = true
+    try {
+      try { syncDictionary() } catch (e) { ctx.log(`dictionary: ${(e && e.message) || e}`) }
+      for (let q = qRead(); q.length && knowledgeOn(); q = qRead()) {
+        const id = q[0]
+        const failed = kRead('failed', {})
+        try {
+          const src = ctx.echo.read('source', id)
+          if (src) await ingest(src)
+          else forgetSource(id)
+          delete failed[id]
+        } catch (e) {
+          // Kept aside with why (a model that didn't answer, a source that can't be read): tried again on the user's word.
+          failed[id] = { error: String((e && e.message) || e).slice(0, 300), at: new Date().toISOString() }
+          ctx.log(`knowledge ${id}: ${failed[id].error}`)
+        }
+        kWrite('failed', failed)
+        kWrite('queue', qRead().filter((x) => x !== id))
+      }
+    } finally { draining = false }
+  }
+  if (typeof ctx.on === 'function') ctx.on('minutes_written', (p) => { if (knowledgeOn() && p && p.id) { enqueue([p.id]); drain() } })
+  if (typeof ctx.on === 'function') ctx.on('sources_changed', (p) => {
+    if (!knowledgeOn() || !p) return
+    for (const id of p.removed || []) { try { forgetSource(id) } catch (e) { ctx.log(`knowledge ${id}: ${(e && e.message) || e}`) } }
+    enqueue(p.changed || [])
+    drain()
+  })
+  // The first fill: Echo's sources since a day (newest first from Echo; read oldest first, so newer facts replace older).
+  ctx.command('knowledge_fill', ({ since, thread, kind, limit, dry }) => {
+    if (!knowledgeOn()) throw new Error('Knowledge is off')
+    const list = ctx.echo.read('sources', { ...(since ? { since } : {}), ...(thread ? { thread } : {}), ...(kind ? { kind } : {}), limit: Math.min(1000, limit || 1000) }) || []
+    const known = kRead('sources', {}), q = qRead()
+    // Not read yet — or skipped for want of an AI profile (it may have one now; asking costs nothing).
+    const fresh = list.filter((x) => (!known[x.id] || known[x.id].skipped) && !q.includes(x.id))
+    if (dry) return { total: list.length, new: fresh.filter((x) => !known[x.id]).length }
+    return { queued: fresh.length, queue: enqueue(fresh.map((x) => x.id).reverse()) }
+  })
+  // The window's nudge (every minute while it is open): a queue left by a terminal or a quit is read without waiting
+  // for an event or for Settings → Knowledge to be opened.
+  ctx.command('knowledge_wake', () => { if (knowledgeOn() && qRead().length) drain(); return { queue: qRead().length, reading: draining } })
+  ctx.command('knowledge_retry', () => { const f = kRead('failed', {}); kWrite('failed', {}); return { queue: enqueue(Object.keys(f)) } })
+  // A source given whole (a terminal, a test): `echoctl plugin call obsidian ingest '{"source": {...}}'`.
   ctx.command('ingest', async ({ source, force, patch }) => ingest(source, { force, patch }))
   ctx.command('forget_source', ({ id }) => forgetSource(String(id || '')))
   ctx.command('knowledge_status', () => {
     const st = { things: kRead('things', {}), pending: kRead('pending', {}), sources: kRead('sources', {}) }
-    return { on: knowledgeOn(), notes: Object.values(st.things).filter((x) => x.written).length, candidates: Object.keys(st.pending).length, sources: Object.keys(st.sources).length, last: Object.entries(st.sources).sort((a, b) => String(b[1].at).localeCompare(String(a[1].at))).slice(0, 5).map(([id, x]) => ({ id, ...x })) }
+    return { on: knowledgeOn(), notes: Object.values(st.things).filter((x) => x.written).length, candidates: Object.keys(st.pending).length, sources: Object.keys(st.sources).length, queue: qRead().length, reading: draining, failed: kRead('failed', {}), last: Object.entries(st.sources).sort((a, b) => String(b[1].at).localeCompare(String(a[1].at))).slice(0, 5).map(([id, x]) => ({ id, ...x })) }
   })
 
   // ── the switch: Echo's knowledge (Echo's own vault) on or off — here only, not in Echo's core ──

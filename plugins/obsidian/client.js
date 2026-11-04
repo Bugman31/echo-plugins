@@ -124,17 +124,24 @@ export function apply(ctx) {
     if (loading) return force ? loading.then(() => load(true)) : loading
     loading = (async () => {
       let changed = !!force
-      try { const d = await ctx.call('view'); const j = JSON.stringify(d); changed = changed || j !== seen || !!error; seen = j; data = d; error = '' } catch (e) { changed = changed || error !== e.message; error = e.message }
+      try { const d = await ctx.call('view', { window: true }); const j = JSON.stringify(d); changed = changed || j !== seen || !!error; seen = j; data = d; error = '' } catch (e) { changed = changed || error !== e.message; error = e.message }
       loadedAt = Date.now(); loading = null
       if (data && (!sel || !data.vaults.some((v) => v.id === sel))) sel = (data.vaults.find((v) => v.state !== 'ready') || data.vaults[0] || {}).id || null
       if (changed && !editing) ctx.render()
-      if (here() && data && data.vaults.some((v) => v.state === 'analysing')) setTimeout(load, 2500)
+      // While a vault is being read, or sources are read into Knowledge, the page follows it.
+      const busy = data && (data.vaults.some((v) => v.state === 'analysing') || ((data.knowledge || {}).queue > 0))
+      const w = ctx.where()
+      if (busy && (here() || /^obsidian:/.test(w.tab || '') || (w.view === 'settings' && w.section === 'brain'))) setTimeout(load, 2500)
     })()
     return loading
   }
   // Each time the section or the activity is shown, the vaults are read again (never a stale copy after an add,
   // an analysis finished elsewhere, or the Inbox's link).
   const fresh = () => { if (data && !loading && Date.now() - loadedAt > 3000) load() }
+  // Knowledge's queue is read while the window is open — also one queued from a terminal (`knowledge_fill`): a nudge now
+  // and every minute; it stops when the plugin is gone (the call fails).
+  const wake = () => ctx.call('knowledge_wake').then(() => setTimeout(wake, 60000), () => {})
+  setTimeout(wake, 5000)
   const op = async (command, args) => {
     try { const r = await ctx.call(command, args); error = ''; await load(true); return r } catch (e) { error = e.message; await load(true); return null }
   }
@@ -342,29 +349,48 @@ export function apply(ctx) {
       browserAfter(data.vaults.filter((v) => v.confirmed || v.state === 'ready'))
     },
   })
-  // The Knowledge activity: Echo's own vault — what Echo knows about things, from the calls and mail — browsed the same way.
+  // Knowledge's Notes tab: Echo's own vault — what Echo knows about things, from the calls and mail — browsed the same
+  // way, as a tab of Echo's Knowledge section (beside Recall's Sources, Dictionary, People): #brain/obsidian:notes/echo/<path>.
+  const KBASE = 'brain/obsidian:notes'
   const echoVaults = () => [{ id: 'echo', name: 'Echo', root: data.knowledge.root }]
-  if (ctx.activities) ctx.activities.add({
-    id: 'knowledge',
-    label: 'Knowledge',
-    icon: KNOW(20),
+  if (ctx.slots) ctx.slots.add('knowledge.tab', {
+    id: 'notes',
+    label: 'Notes',
     render() {
-      A.base = 'obsidian:knowledge'
+      A.base = KBASE
       if (!data) { if (!error) load(); return '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' }
       fresh()
       const k = data.knowledge || {}
       // Notes written since it was drawn: read again.
       if (k.notes !== A.echoN) { A.echoN = k.notes; delete A.browse.echo; for (const key of Object.keys(A.graph)) if (key.startsWith('echo|')) delete A.graph[key]; for (const key of Object.keys(A.notes)) if (key.startsWith('echo|')) delete A.notes[key] }
       if (!k.on) return `<div class="ob-empty"><span class="obs-icon">${KNOW(22)}</span><h2 style="margin:0">Knowledge is off</h2><p class="set-sub">Turned on, Echo keeps the lasting facts it learns from your calls and mail — clients, organisations, products, initiatives, documents, each with the words it came from in Recall — as an Obsidian vault of its own. Claude in Echo answers from it, and you can open it in Obsidian.</p><button class="btn primary" data-ob-knowledge="1">Turn it on</button>${error ? `<p class="error">${esc(error)}</p>` : ''}</div>`
-      if (!k.notes) return `<div class="ob-empty"><span class="obs-icon">${KNOW(22)}</span><h2 style="margin:0">Nothing here yet</h2><p class="set-sub">Echo’s vault fills as Echo reads your calls and mail. It is a folder of Markdown notes: ${esc(k.root || '')}</p><button class="btn" data-ob-knowledge="0">Turn it off</button></div>`
+      if (!k.notes) return `<div class="ob-empty"><span class="obs-icon">${KNOW(22)}</span><h2 style="margin:0">${k.queue ? 'Reading your calls and mail…' : 'Nothing here yet'}</h2>
+        <p class="set-sub">From now on each call’s minutes and each mail Recall reads are read into Knowledge. It is a folder of Markdown notes: ${esc(k.root || '')}</p>
+        ${statusHtml(k)}${k.queue ? '' : fillHtml()}<button class="btn" data-ob-knowledge="0">Turn it off</button></div>`
       return browserHtml(echoVaults())
     },
     after() {
       if (!data || !(data.knowledge || {}).notes) return
-      A.base = 'obsidian:knowledge'
+      A.base = KBASE
       browserAfter(echoVaults())
     },
   })
+  // Reading into Knowledge: how far, and what couldn't be read.
+  function statusHtml(k) {
+    return (k.queue ? `<p class="set-sub"><span class="spinner"></span> ${k.queue} source${k.queue === 1 ? '' : 's'} to read</p>` : '')
+      + (k.failed ? `<p class="set-sub">${k.failed} couldn’t be read <button class="btn" data-ob-retry-k>Try again</button></p>` : '')
+  }
+  // The first fill: what was said before Knowledge was on — counted first, read on the user's word.
+  const F = { since: 90, count: {}, asking: false }
+  const sinceDay = (days) => (days ? new Date(Date.now() - days * 864e5).toISOString().slice(0, 10) : '')
+  function fillHtml() {
+    const c = F.count[F.since]
+    if (c === undefined && !F.asking) { F.asking = true; ctx.call('knowledge_fill', { since: sinceDay(F.since), dry: true }).then((r) => { F.count[F.since] = r.new }, () => { F.count[F.since] = null }).finally(() => { F.asking = false; ctx.render() }) }
+    const pick = `<select data-ob-since aria-label="Since">${[[30, 'the last month'], [90, 'the last 3 months'], [180, 'the last 6 months'], [0, 'all of it']].map(([d, l]) => `<option value="${d}"${d === F.since ? ' selected' : ''}>${l}</option>`).join('')}</select>`
+    const cost = c ? ` — ${c} source${c === 1 ? '' : 's'}, about $` + (c * 0.03).toFixed(2) : (c === 0 ? ' — nothing new' : '')
+    return `<div style="display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap">Read what was said in ${pick}${cost}
+      <button class="btn primary" data-ob-fill${!c ? ' disabled' : ''}>Read them</button></div>`
+  }
   function browserAfter(vaults) {
     if (!vaults.length) return
     {
@@ -429,14 +455,16 @@ export function apply(ctx) {
       return `<div class="ob">${side}<section class="ob-mid">${tabs}${body}</section><aside class="ob-right">${rightHtml(n, v.id)}</aside></div>`
   }
   ctx.listen('click', (ev) => {
-    const t = ev.target.closest && ev.target.closest('[data-ob-knowledge],[data-ob-retry],[data-ob-open],[data-ob-close],[data-ob-graph],[data-ob-side],[data-ob-tag],[data-ob-fold],[data-ob-gmode],[data-ob-color],[data-ob-echo],[data-ob-settings],[data-ob-browse]')
+    const t = ev.target.closest && ev.target.closest('[data-ob-knowledge],[data-ob-fill],[data-ob-retry-k],[data-ob-retry],[data-ob-open],[data-ob-close],[data-ob-graph],[data-ob-side],[data-ob-tag],[data-ob-fold],[data-ob-gmode],[data-ob-color],[data-ob-echo],[data-ob-settings],[data-ob-browse]')
     if (!t) return
     const d = t.dataset
+    if ('obFill' in d) return ctx.call('knowledge_fill', { since: sinceDay(F.since) }).then(() => { F.count = {}; return load(true) }, (e) => { error = e.message; ctx.render() })
+    if ('obRetryK' in d) return ctx.call('knowledge_retry').then(() => load(true))
     if (d.obKnowledge) return ctx.call('knowledge', { on: d.obKnowledge === '1' }).then(() => load(true), (e) => { error = e.message; ctx.render() })
     if (d.obRetry) { delete A.errors[d.obRetry]; return ctx.render() }
     if (d.obClose) { ev.stopPropagation(); const r = route(), o = opened(r.vault); A.opens[r.vault] = o.filter((p) => p !== d.obClose); const next = A.opens[r.vault][A.opens[r.vault].length - 1] || ''; A.tabs[r.vault] = next; return ctx.go(`${A.base}/${r.vault}${next ? '/' + encodeURIComponent(next) : ''}`) }
     if (d.obOpen) return openNote(d.obVault || route().vault, d.obOpen)
-    if ('obGraph' in d) { A.tabs[route().vault || (A.base === 'obsidian:knowledge' ? 'echo' : (data.vaults.find((x) => x.confirmed) || {}).id)] = 'graph'; return ctx.render() }
+    if ('obGraph' in d) { A.tabs[route().vault || (A.base === KBASE ? 'echo' : (data.vaults.find((x) => x.confirmed) || {}).id)] = 'graph'; return ctx.render() }
     if (d.obSide) { A.side = d.obSide; A.tag = ''; return ctx.render() }
     if (d.obTag != null) { A.tag = d.obTag; A.side = 'files'; return ctx.render() }
     if (d.obFold) { A.folded.has(d.obFold) ? A.folded.delete(d.obFold) : A.folded.add(d.obFold); return ctx.render() }
@@ -446,6 +474,7 @@ export function apply(ctx) {
     if ('obSettings' in d) return ctx.go(`settings/${SECTION}`)
     if (d.obBrowse) return ctx.go(`obsidian:vaults/${d.obBrowse}`)
   })
+  ctx.listen('change', (ev) => { if (ev.target.matches && ev.target.matches('[data-ob-since]')) { F.since = +ev.target.value; ctx.render() } })
   ctx.listen('change', (ev) => { if (ev.target.matches && ev.target.matches('[data-ob-switch]')) { A.tag = ''; const v = ev.target.value, t = A.tabs[v]; ctx.go(`${A.base}/${v}${t && t !== 'graph' ? '/' + encodeURIComponent(t) : ''}`) } })
   ctx.listen('input', (ev) => {
     if (ev.target.id === 'ob-q') { A.q = ev.target.value; ctx.render(); const el = document.getElementById('ob-q'); if (el) { el.focus(); el.setSelectionRange(A.q.length, A.q.length) } }
@@ -469,9 +498,24 @@ export function apply(ctx) {
       return `<div class="obs">${tabs()}${detail(v)}</div>`
     },
   })
+  // Knowledge's switch, how far its reading is, and the first fill: a card in Settings → Knowledge (Echo's slot), else a
+  // row on this plugin's card.
+  const hasSlot = (name) => { try { return ctx.slots && ctx.slots.list().includes(name) } catch { return false } }
+  const inKnowledgeSettings = hasSlot('knowledge.settings')
+  const knowledgeRows = () => {
+    if (!data) { if (!error) load(); return [ctx.ui.setRow('Notes', '…', '')] }
+    fresh()
+    const k = data.knowledge || {}
+    const rows = [ctx.ui.setRow('Notes', k.on ? `On — ${k.notes} note${k.notes === 1 ? '' : 's'} of what Echo knows about things (Knowledge → Notes), each fact linking back to Recall.` : 'Off — Echo keeps no notes of its own; Recall still has everything said.',
+      `<button class="btn" data-ob-knowledge="${k.on ? '0' : '1'}">${k.on ? 'Turn off' : 'Turn on'}</button>`)]
+    if (k.on && (k.queue || k.failed)) rows.push(ctx.ui.setRow('Reading', `${k.queue ? `${k.queue} source${k.queue === 1 ? '' : 's'} to read` : ''}${k.queue && k.failed ? ' · ' : ''}${k.failed ? `${k.failed} couldn’t be read` : ''}`, k.failed ? '<button class="btn" data-ob-retry-k>Try again</button>' : '<span class="spinner"></span>'))
+    if (k.on && !k.queue) rows.push(ctx.ui.setRow('Read what was said before', 'Calls and mail from before Knowledge was on, read once — counted and priced first.', fillHtml()))
+    return rows
+  }
+  if (inKnowledgeSettings) ctx.slots.add('knowledge.settings', { label: 'Notes', render: () => knowledgeRows().join('') })
   ctx.settings.add({ render: () => ctx.ui.setCard('', [
     ctx.ui.setRow('Vaults', `${data ? data.vaults.length : '…'} connected — set them up in their own section.`, '<button class="btn" data-obs-open>Open</button>'),
-    ctx.ui.setRow('Knowledge', data && data.knowledge && data.knowledge.on ? `On — ${data.knowledge.notes} notes in Echo’s own vault (the Knowledge activity).` : 'Off — Echo keeps no facts of its own; Recall still has everything said.', data && data.knowledge ? `<button class="btn" data-ob-knowledge="${data.knowledge.on ? '0' : '1'}">${data.knowledge.on ? 'Turn off' : 'Turn on'}</button>` : ''),
+    ...(inKnowledgeSettings ? [] : knowledgeRows()),
   ]) })
   ctx.palette.add({ label: 'Obsidian: vaults', keywords: 'obsidian vault notes knowledge', run: () => ctx.go(`settings/${SECTION}`) })
   ctx.palette.add({ label: 'Obsidian: connect a vault', keywords: 'obsidian vault add connect', run: () => { ctx.go(`settings/${SECTION}`); addVault() } })
