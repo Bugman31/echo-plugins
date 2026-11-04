@@ -25,6 +25,9 @@ then on Claude in Echo knows where to look.
   by a small Claude run; the plugin keeps only observations whose exact words are in the source, links each to its
   moment (`echo://…`), moves what a newer one replaces to History, makes a note only once a second source names a
   thing, and never puts back an observation you deleted. Your own sections in a note stay yours.
+  Once on, every call's minutes and every mail Recall reads go into Knowledge by themselves, one at a time, each on
+  the AI profile its text may go to (none: it isn't sent). What was said before can be read in once, on your word,
+  from the Knowledge activity — counted and priced first.
 - Your vault isn't changed by Echo itself. Removing a vault from Echo takes all of this back.
 
-Needs Echo 0.7.2 or later. Part of the [Echo plugins](../../README.md) marketplace.
+Needs Echo 0.8.0 or later. Part of the [Echo plugins](../../README.md) marketplace.

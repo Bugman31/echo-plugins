@@ -124,11 +124,13 @@ export function apply(ctx) {
     if (loading) return force ? loading.then(() => load(true)) : loading
     loading = (async () => {
       let changed = !!force
-      try { const d = await ctx.call('view'); const j = JSON.stringify(d); changed = changed || j !== seen || !!error; seen = j; data = d; error = '' } catch (e) { changed = changed || error !== e.message; error = e.message }
+      try { const d = await ctx.call('view', { window: true }); const j = JSON.stringify(d); changed = changed || j !== seen || !!error; seen = j; data = d; error = '' } catch (e) { changed = changed || error !== e.message; error = e.message }
       loadedAt = Date.now(); loading = null
       if (data && (!sel || !data.vaults.some((v) => v.id === sel))) sel = (data.vaults.find((v) => v.state !== 'ready') || data.vaults[0] || {}).id || null
       if (changed && !editing) ctx.render()
-      if (here() && data && data.vaults.some((v) => v.state === 'analysing')) setTimeout(load, 2500)
+      // While a vault is being read, or sources are read into Knowledge, the page follows it.
+      const busy = data && (data.vaults.some((v) => v.state === 'analysing') || ((data.knowledge || {}).queue > 0))
+      if (busy && (here() || /knowledge/.test(ctx.where().view || ''))) setTimeout(load, 2500)
     })()
     return loading
   }
@@ -356,7 +358,9 @@ export function apply(ctx) {
       // Notes written since it was drawn: read again.
       if (k.notes !== A.echoN) { A.echoN = k.notes; delete A.browse.echo; for (const key of Object.keys(A.graph)) if (key.startsWith('echo|')) delete A.graph[key]; for (const key of Object.keys(A.notes)) if (key.startsWith('echo|')) delete A.notes[key] }
       if (!k.on) return `<div class="ob-empty"><span class="obs-icon">${KNOW(22)}</span><h2 style="margin:0">Knowledge is off</h2><p class="set-sub">Turned on, Echo keeps the lasting facts it learns from your calls and mail — clients, organisations, products, initiatives, documents, each with the words it came from in Recall — as an Obsidian vault of its own. Claude in Echo answers from it, and you can open it in Obsidian.</p><button class="btn primary" data-ob-knowledge="1">Turn it on</button>${error ? `<p class="error">${esc(error)}</p>` : ''}</div>`
-      if (!k.notes) return `<div class="ob-empty"><span class="obs-icon">${KNOW(22)}</span><h2 style="margin:0">Nothing here yet</h2><p class="set-sub">Echo’s vault fills as Echo reads your calls and mail. It is a folder of Markdown notes: ${esc(k.root || '')}</p><button class="btn" data-ob-knowledge="0">Turn it off</button></div>`
+      if (!k.notes) return `<div class="ob-empty"><span class="obs-icon">${KNOW(22)}</span><h2 style="margin:0">${k.queue ? 'Reading your calls and mail…' : 'Nothing here yet'}</h2>
+        <p class="set-sub">From now on each call’s minutes and each mail Recall reads are read into Knowledge. It is a folder of Markdown notes: ${esc(k.root || '')}</p>
+        ${statusHtml(k)}${k.queue ? '' : fillHtml()}<button class="btn" data-ob-knowledge="0">Turn it off</button></div>`
       return browserHtml(echoVaults())
     },
     after() {
@@ -365,6 +369,22 @@ export function apply(ctx) {
       browserAfter(echoVaults())
     },
   })
+  // Reading into Knowledge: how far, and what couldn't be read.
+  function statusHtml(k) {
+    return (k.queue ? `<p class="set-sub"><span class="spinner"></span> ${k.queue} source${k.queue === 1 ? '' : 's'} to read</p>` : '')
+      + (k.failed ? `<p class="set-sub">${k.failed} couldn’t be read <button class="btn" data-ob-retry-k>Try again</button></p>` : '')
+  }
+  // The first fill: what was said before Knowledge was on — counted first, read on the user's word.
+  const F = { since: 90, count: {}, asking: false }
+  const sinceDay = (days) => (days ? new Date(Date.now() - days * 864e5).toISOString().slice(0, 10) : '')
+  function fillHtml() {
+    const c = F.count[F.since]
+    if (c === undefined && !F.asking) { F.asking = true; ctx.call('knowledge_fill', { since: sinceDay(F.since), dry: true }).then((r) => { F.count[F.since] = r.new }, () => { F.count[F.since] = null }).finally(() => { F.asking = false; ctx.render() }) }
+    const pick = `<select data-ob-since aria-label="Since">${[[30, 'the last month'], [90, 'the last 3 months'], [180, 'the last 6 months'], [0, 'all of it']].map(([d, l]) => `<option value="${d}"${d === F.since ? ' selected' : ''}>${l}</option>`).join('')}</select>`
+    const cost = c ? ` — ${c} source${c === 1 ? '' : 's'}, about $` + (c * 0.03).toFixed(2) : (c === 0 ? ' — nothing new' : '')
+    return `<div style="display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap">Read what was said in ${pick}${cost}
+      <button class="btn primary" data-ob-fill${!c ? ' disabled' : ''}>Read them</button></div>`
+  }
   function browserAfter(vaults) {
     if (!vaults.length) return
     {
@@ -429,9 +449,11 @@ export function apply(ctx) {
       return `<div class="ob">${side}<section class="ob-mid">${tabs}${body}</section><aside class="ob-right">${rightHtml(n, v.id)}</aside></div>`
   }
   ctx.listen('click', (ev) => {
-    const t = ev.target.closest && ev.target.closest('[data-ob-knowledge],[data-ob-retry],[data-ob-open],[data-ob-close],[data-ob-graph],[data-ob-side],[data-ob-tag],[data-ob-fold],[data-ob-gmode],[data-ob-color],[data-ob-echo],[data-ob-settings],[data-ob-browse]')
+    const t = ev.target.closest && ev.target.closest('[data-ob-knowledge],[data-ob-fill],[data-ob-retry-k],[data-ob-retry],[data-ob-open],[data-ob-close],[data-ob-graph],[data-ob-side],[data-ob-tag],[data-ob-fold],[data-ob-gmode],[data-ob-color],[data-ob-echo],[data-ob-settings],[data-ob-browse]')
     if (!t) return
     const d = t.dataset
+    if ('obFill' in d) return ctx.call('knowledge_fill', { since: sinceDay(F.since) }).then(() => { F.count = {}; return load(true) }, (e) => { error = e.message; ctx.render() })
+    if ('obRetryK' in d) return ctx.call('knowledge_retry').then(() => load(true))
     if (d.obKnowledge) return ctx.call('knowledge', { on: d.obKnowledge === '1' }).then(() => load(true), (e) => { error = e.message; ctx.render() })
     if (d.obRetry) { delete A.errors[d.obRetry]; return ctx.render() }
     if (d.obClose) { ev.stopPropagation(); const r = route(), o = opened(r.vault); A.opens[r.vault] = o.filter((p) => p !== d.obClose); const next = A.opens[r.vault][A.opens[r.vault].length - 1] || ''; A.tabs[r.vault] = next; return ctx.go(`${A.base}/${r.vault}${next ? '/' + encodeURIComponent(next) : ''}`) }
@@ -446,6 +468,7 @@ export function apply(ctx) {
     if ('obSettings' in d) return ctx.go(`settings/${SECTION}`)
     if (d.obBrowse) return ctx.go(`obsidian:vaults/${d.obBrowse}`)
   })
+  ctx.listen('change', (ev) => { if (ev.target.matches && ev.target.matches('[data-ob-since]')) { F.since = +ev.target.value; ctx.render() } })
   ctx.listen('change', (ev) => { if (ev.target.matches && ev.target.matches('[data-ob-switch]')) { A.tag = ''; const v = ev.target.value, t = A.tabs[v]; ctx.go(`${A.base}/${v}${t && t !== 'graph' ? '/' + encodeURIComponent(t) : ''}`) } })
   ctx.listen('input', (ev) => {
     if (ev.target.id === 'ob-q') { A.q = ev.target.value; ctx.render(); const el = document.getElementById('ob-q'); if (el) { el.focus(); el.setSelectionRange(A.q.length, A.q.length) } }
@@ -471,7 +494,7 @@ export function apply(ctx) {
   })
   ctx.settings.add({ render: () => ctx.ui.setCard('', [
     ctx.ui.setRow('Vaults', `${data ? data.vaults.length : '…'} connected — set them up in their own section.`, '<button class="btn" data-obs-open>Open</button>'),
-    ctx.ui.setRow('Knowledge', data && data.knowledge && data.knowledge.on ? `On — ${data.knowledge.notes} notes in Echo’s own vault (the Knowledge activity).` : 'Off — Echo keeps no facts of its own; Recall still has everything said.', data && data.knowledge ? `<button class="btn" data-ob-knowledge="${data.knowledge.on ? '0' : '1'}">${data.knowledge.on ? 'Turn off' : 'Turn on'}</button>` : ''),
+    ctx.ui.setRow('Knowledge', data && data.knowledge && data.knowledge.on ? `On — ${data.knowledge.notes} notes in Echo’s own vault (the Knowledge activity)${data.knowledge.queue ? ` · reading ${data.knowledge.queue} source${data.knowledge.queue === 1 ? '' : 's'}` : ''}${data.knowledge.failed ? ` · ${data.knowledge.failed} couldn’t be read` : ''}.` : 'Off — Echo keeps no facts of its own; Recall still has everything said.', data && data.knowledge ? `<button class="btn" data-ob-knowledge="${data.knowledge.on ? '0' : '1'}">${data.knowledge.on ? 'Turn off' : 'Turn on'}</button>` : ''),
   ]) })
   ctx.palette.add({ label: 'Obsidian: vaults', keywords: 'obsidian vault notes knowledge', run: () => ctx.go(`settings/${SECTION}`) })
   ctx.palette.add({ label: 'Obsidian: connect a vault', keywords: 'obsidian vault add connect', run: () => { ctx.go(`settings/${SECTION}`); addVault() } })
