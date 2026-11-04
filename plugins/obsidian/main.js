@@ -958,7 +958,7 @@ of Echo's is copied here.
   const named = (src, st) => {
     const text = ` ${kn(src.text)} `
     const hits = new Map()
-    for (const [n, name] of dictionary(st.things, {})) if (n.length >= 3 && text.includes(` ${n} `)) hits.set(name, (hits.get(name) || 0) + text.split(` ${n} `).length - 1)
+    for (const [n, name] of dictionary(st.things, {})) if (st.things[name] && n.length >= 3 && text.includes(` ${n} `)) hits.set(name, (hits.get(name) || 0) + text.split(` ${n} `).length - 1)
     return [...hits].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name]) => [name, st.things[name]])
   }
   const ingesting = new Set()
@@ -1013,11 +1013,12 @@ of Echo's is copied here.
   // start it. A terminal's `echoctl plugin call` loads the plugin anew and never runs Claude for the queue.
   const qRead = () => kRead('queue', [])
   let draining = false
+  // Queued only: the reading is started by the app's events and its window (`view {window: true}`), never here — a
+  // terminal's `knowledge_fill` queues and leaves the reading to the app.
   const enqueue = (ids) => {
     const q = qRead()
     for (const id of ids) if (id && !q.includes(id)) q.push(id)
     kWrite('queue', q)
-    drain()
     return q.length
   }
   const drain = async () => {
@@ -1042,11 +1043,12 @@ of Echo's is copied here.
       }
     } finally { draining = false }
   }
-  if (typeof ctx.on === 'function') ctx.on('minutes_written', (p) => { if (knowledgeOn() && p && p.id) enqueue([p.id]) })
+  if (typeof ctx.on === 'function') ctx.on('minutes_written', (p) => { if (knowledgeOn() && p && p.id) { enqueue([p.id]); drain() } })
   if (typeof ctx.on === 'function') ctx.on('sources_changed', (p) => {
     if (!knowledgeOn() || !p) return
     for (const id of p.removed || []) { try { forgetSource(id) } catch (e) { ctx.log(`knowledge ${id}: ${(e && e.message) || e}`) } }
     enqueue(p.changed || [])
+    drain()
   })
   // The first fill: Echo's sources since a day (newest first from Echo; read oldest first, so newer facts replace older).
   ctx.command('knowledge_fill', ({ since, thread, kind, limit, dry }) => {
