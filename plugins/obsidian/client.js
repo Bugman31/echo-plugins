@@ -130,7 +130,7 @@ export function apply(ctx) {
       if (changed && !editing) ctx.render()
       // While a vault is being read, or sources are read into Knowledge, the page follows it.
       const busy = data && (data.vaults.some((v) => v.state === 'analysing') || ((data.knowledge || {}).queue > 0))
-      if (busy && (here() || /knowledge/.test(ctx.where().view || ''))) setTimeout(load, 2500)
+      if (busy && (here() || /^obsidian:/.test(ctx.where().tab || ''))) setTimeout(load, 2500)
     })()
     return loading
   }
@@ -344,14 +344,15 @@ export function apply(ctx) {
       browserAfter(data.vaults.filter((v) => v.confirmed || v.state === 'ready'))
     },
   })
-  // The Knowledge activity: Echo's own vault — what Echo knows about things, from the calls and mail — browsed the same way.
+  // Knowledge's Notes tab: Echo's own vault — what Echo knows about things, from the calls and mail — browsed the same
+  // way, as a tab of Echo's Knowledge section (beside Recall's Sources, Dictionary, People): #brain/obsidian:notes/echo/<path>.
+  const KBASE = 'brain/obsidian:notes'
   const echoVaults = () => [{ id: 'echo', name: 'Echo', root: data.knowledge.root }]
-  if (ctx.activities) ctx.activities.add({
-    id: 'knowledge',
-    label: 'Knowledge',
-    icon: KNOW(20),
+  if (ctx.slots) ctx.slots.add('knowledge.tab', {
+    id: 'notes',
+    label: 'Notes',
     render() {
-      A.base = 'obsidian:knowledge'
+      A.base = KBASE
       if (!data) { if (!error) load(); return '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' }
       fresh()
       const k = data.knowledge || {}
@@ -365,7 +366,7 @@ export function apply(ctx) {
     },
     after() {
       if (!data || !(data.knowledge || {}).notes) return
-      A.base = 'obsidian:knowledge'
+      A.base = KBASE
       browserAfter(echoVaults())
     },
   })
@@ -458,7 +459,7 @@ export function apply(ctx) {
     if (d.obRetry) { delete A.errors[d.obRetry]; return ctx.render() }
     if (d.obClose) { ev.stopPropagation(); const r = route(), o = opened(r.vault); A.opens[r.vault] = o.filter((p) => p !== d.obClose); const next = A.opens[r.vault][A.opens[r.vault].length - 1] || ''; A.tabs[r.vault] = next; return ctx.go(`${A.base}/${r.vault}${next ? '/' + encodeURIComponent(next) : ''}`) }
     if (d.obOpen) return openNote(d.obVault || route().vault, d.obOpen)
-    if ('obGraph' in d) { A.tabs[route().vault || (A.base === 'obsidian:knowledge' ? 'echo' : (data.vaults.find((x) => x.confirmed) || {}).id)] = 'graph'; return ctx.render() }
+    if ('obGraph' in d) { A.tabs[route().vault || (A.base === KBASE ? 'echo' : (data.vaults.find((x) => x.confirmed) || {}).id)] = 'graph'; return ctx.render() }
     if (d.obSide) { A.side = d.obSide; A.tag = ''; return ctx.render() }
     if (d.obTag != null) { A.tag = d.obTag; A.side = 'files'; return ctx.render() }
     if (d.obFold) { A.folded.has(d.obFold) ? A.folded.delete(d.obFold) : A.folded.add(d.obFold); return ctx.render() }
@@ -494,7 +495,7 @@ export function apply(ctx) {
   })
   ctx.settings.add({ render: () => ctx.ui.setCard('', [
     ctx.ui.setRow('Vaults', `${data ? data.vaults.length : '…'} connected — set them up in their own section.`, '<button class="btn" data-obs-open>Open</button>'),
-    ctx.ui.setRow('Knowledge', data && data.knowledge && data.knowledge.on ? `On — ${data.knowledge.notes} notes in Echo’s own vault (the Knowledge activity)${data.knowledge.queue ? ` · reading ${data.knowledge.queue} source${data.knowledge.queue === 1 ? '' : 's'}` : ''}${data.knowledge.failed ? ` · ${data.knowledge.failed} couldn’t be read` : ''}.` : 'Off — Echo keeps no facts of its own; Recall still has everything said.', data && data.knowledge ? `<button class="btn" data-ob-knowledge="${data.knowledge.on ? '0' : '1'}">${data.knowledge.on ? 'Turn off' : 'Turn on'}</button>` : ''),
+    ctx.ui.setRow('Knowledge', data && data.knowledge && data.knowledge.on ? `On — ${data.knowledge.notes} notes in Echo’s own vault (Knowledge → Notes)${data.knowledge.queue ? ` · reading ${data.knowledge.queue} source${data.knowledge.queue === 1 ? '' : 's'}` : ''}${data.knowledge.failed ? ` · ${data.knowledge.failed} couldn’t be read` : ''}.` : 'Off — Echo keeps no facts of its own; Recall still has everything said.', data && data.knowledge ? `<button class="btn" data-ob-knowledge="${data.knowledge.on ? '0' : '1'}">${data.knowledge.on ? 'Turn off' : 'Turn on'}</button>` : ''),
   ]) })
   ctx.palette.add({ label: 'Obsidian: vaults', keywords: 'obsidian vault notes knowledge', run: () => ctx.go(`settings/${SECTION}`) })
   ctx.palette.add({ label: 'Obsidian: connect a vault', keywords: 'obsidian vault add connect', run: () => { ctx.go(`settings/${SECTION}`); addVault() } })

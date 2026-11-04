@@ -34,7 +34,7 @@
       "label": "Knowledge",
       "type": "bool",
       "default": false,
-      "help": "Echo keeps the lasting facts it learns from your calls and mail as its own Obsidian vault — the Knowledge activity; Claude in Echo answers from it."
+      "help": "Echo keeps the lasting facts it learns from your calls and mail as its own Obsidian vault — Knowledge → Notes; Claude in Echo answers from it."
     }
   ]
 }

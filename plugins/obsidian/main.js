@@ -553,7 +553,7 @@ export function apply(ctx) {
 
   // ── Echo's own vault: the knowledge Echo keeps, in the plugin's store (`vault/`) ──
   // Written by the plugin only (ctx.store), so its index is kept up to date at each write — no walk of the folder.
-  // On while the plugin's `knowledge` setting is on: it is Knowledge then, in the Knowledge activity and the skill.
+  // On while the plugin's `knowledge` setting is on: it is Knowledge then, in Knowledge → Notes and the skill.
   const knowledgeOn = () => { try { return !!ctx.settings.get('knowledge') } catch { return false } }
   const echoVault = () => ({ id: ECHO, name: 'Echo', root: ctx.store.path('vault'), echo: true, confirmed: true, state: 'ready' })
   const vaultPath = (path) => {
@@ -784,6 +784,21 @@ of Echo's is copied here.
     }
     return d
   }
+  const termOf = (name, x, terms) => { const mine = new Set([name, ...(x.aliases || [])].map(kn)); return terms.find((t) => termNames(t).some((n) => mine.has(kn(n)))) || null }
+  // Edits in Knowledge → Dictionary reach the notes: a thing with a term takes the term's names as its aliases; every
+  // note is written again once the dictionary changed (looked at when the window looks, and before each reading).
+  const syncDictionary = () => {
+    const terms = coreTerms()
+    if (!terms.length || !knowledgeOn()) return false
+    const h = hashOf(JSON.stringify(terms))
+    if (ctx.store.read('knowledge/dictionary.hash') === h) return false
+    const st = kState()
+    for (const [name, x] of Object.entries(st.things)) { const t = termOf(name, x, terms); if (t) x.aliases = termNames(t).filter((n) => kn(n) !== kn(name)) }
+    kPublish(st, Object.keys(st.things).filter((n) => st.things[n].written), '')
+    kSave(st)
+    ctx.store.write('knowledge/dictionary.hash', h)
+    return true
+  }
   // A name Echo's dictionary doesn't have yet, from a note: written back through Echo (when it lets plugins).
   const teach = (name, x, terms) => {
     const add = ctx.echo && ctx.echo.dictionary && ctx.echo.dictionary.add
@@ -827,13 +842,14 @@ of Echo's is copied here.
   ].join('\n')
 
   // The note as Echo writes it, keeping what the user wrote: their frontmatter keys and their own sections.
-  const renderNote = (name, x, things, old) => {
+  const renderNote = (name, x, things, old, terms = []) => {
     const exists = (to) => { const k = Object.keys(things).find((n) => kn(n) === kn(to) || (things[n].aliases || []).some((a) => kn(a) === kn(to))); return k && (things[k].obs || []).length ? k : null }
     const line = (o) => `- [${o.cat}] ${o.text} — “${o.quote}” ([${o.label}](${o.link}))`
     const rels = [...new Set((x.rels || []).map(([t, to]) => { const k = exists(to); return k && k !== name ? `- ${t} [[${safeName(k)}]]` : null }).filter(Boolean))].sort()
     const threads = (x.threads || []).map(([id, n]) => `[${n}](echo://thread/${id})`).join(', ')
     const prev = old ? parseFrontmatter(old) : { props: {}, body: '' }
-    const fm = { ...prev.props, type: x.type, aliases: x.aliases || [], echo: x.echo || undefined, updated: (x.obs[0] || {}).date }
+    const t = termOf(name, x, terms)
+    const fm = { ...prev.props, type: x.type, aliases: t ? termNames(t).filter((n) => kn(n) !== kn(name)) : x.aliases || [], echo: x.echo || undefined, updated: (x.obs[0] || {}).date }
     const yaml = (v) => (Array.isArray(v) ? `[${v.map((a) => JSON.stringify(String(a))).join(', ')}]` : JSON.stringify(String(v)))
     const head = '---\n' + Object.entries(fm).filter(([, v]) => v != null && v !== '' && !(Array.isArray(v) && !v.length)).map(([k, v]) => `${k}: ${yaml(v)}`).join('\n') + '\n---\n'
     // The user's own sections (any `## ` that isn't Echo's) stay, after Echo's.
@@ -929,6 +945,7 @@ of Echo's is copied here.
   // Write the notes that changed, index.md and the log line; the vault's rules and types the first time.
   const kPublish = (st, touched, logLine) => {
     const changes = []
+    const terms = coreTerms()
     if (ctx.store.read('vault/_echo/Rules.md') == null) {
       changes.push({ path: '_echo/Rules.md', text: K_RULES })
       for (const [t, folder] of Object.entries(K_TYPES)) changes.push({ path: `_echo/Types/${t[0].toUpperCase() + t.slice(1)}.md`, text: `---\ntype: echo-type\nfolder: ${folder}\n---\n# ${t[0].toUpperCase() + t.slice(1)}\n` })
@@ -938,7 +955,7 @@ of Echo's is copied here.
       if (!x) continue
       const path = notePath(name, x)
       if (!x.obs.length && !(x.history || []).length) { if (x.written) changes.push({ path, text: null }); x.written = false; continue }
-      changes.push({ path, text: renderNote(name, x, st.things, ctx.store.read(`vault/${path}`)) })
+      changes.push({ path, text: renderNote(name, x, st.things, ctx.store.read(`vault/${path}`), terms) })
       x.written = true
     }
     const lines = ['# Index', '', 'Read this first: one line per note. Open a note, then its sources (echo:// links, read with Echo\'s `read_link`) only for the exact words.', '']
@@ -947,7 +964,6 @@ of Echo's is copied here.
       if (list.length) lines.push(`## ${folder}`, ...list.map(([n, x]) => `- [[${safeName(n)}]]${x.summary ? ` — ${String(x.summary).split(/(?<=\.)\s/)[0].slice(0, 160)}` : ''}`), '')
     }
     changes.push({ path: 'index.md', text: lines.join('\n') })
-    const terms = coreTerms()
     if (terms.length) changes.push({ path: '_echo/Dictionary.md', text: ['# Dictionary', '', 'Echo\'s dictionary, mirrored (Echo keeps it: change it in Echo). Each name, then the other names it goes by.', '', ...terms.slice().sort((a, b) => a.name.localeCompare(b.name)).map((t) => `- **${t.name}**${t.kind ? ` (${t.kind})` : ''}${termNames(t).length > 1 ? ` — ${termNames(t).slice(1).join(', ')}` : ''}`)].join('\n') + '\n' })
     if (logLine) changes.push({ path: 'log.md', text: `${(ctx.store.read('vault/log.md') || '# Log\n').replace(/\n*$/, '\n')}- [${new Date().toISOString().slice(0, 10)}] ${logLine}\n` })
     echoWrite(changes)
@@ -1025,6 +1041,7 @@ of Echo's is copied here.
     if (draining || !knowledgeOn()) return
     draining = true
     try {
+      try { syncDictionary() } catch (e) { ctx.log(`dictionary: ${(e && e.message) || e}`) }
       for (let q = qRead(); q.length && knowledgeOn(); q = qRead()) {
         const id = q[0]
         const failed = kRead('failed', {})

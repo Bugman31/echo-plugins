@@ -20,14 +20,15 @@ then on Claude in Echo knows where to look.
   moved note keeps its links.
 - **Knowledge** (a switch in its Settings card, off by default): Echo keeps the lasting facts it learns from your calls
   and mail as an Obsidian vault of its own, in the plugin's folder. Each fact links back to Recall, Echo's index of
-  everything said. The **Knowledge** activity browses it, Claude in Echo answers from it (the tools take
-  `"vault": "echo"`), and you can open it in Obsidian. Each new source (a call's minutes, a mail's facts) is read once
+  everything said. Its notes are a tab of Echo's **Knowledge** section (Notes, beside Recall's Sources, Dictionary and
+  People); Claude in Echo answers from it (the tools take `"vault": "echo"`), and you can open it in Obsidian. A note's
+  aliases follow Echo's dictionary: change a name in Knowledge → Dictionary and the notes follow. Each new source (a call's minutes, a mail's facts) is read once
   by a small Claude run; the plugin keeps only observations whose exact words are in the source, links each to its
   moment (`echo://…`), moves what a newer one replaces to History, makes a note only once a second source names a
   thing, and never puts back an observation you deleted. Your own sections in a note stay yours.
   Once on, every call's minutes and every mail Recall reads go into Knowledge by themselves, one at a time, each on
   the AI profile its text may go to (none: it isn't sent). What was said before can be read in once, on your word,
-  from the Knowledge activity — counted and priced first.
+  from Knowledge → Notes — counted and priced first.
 - Your vault isn't changed by Echo itself. Removing a vault from Echo takes all of this back.
 
 Needs Echo 0.8.0 or later. Part of the [Echo plugins](../../README.md) marketplace.
