@@ -761,11 +761,35 @@ Knowledge only. Echo keeps everything else — calls, mail, people, threads, cli
     return null
   }
   // The dictionary: every name and alias of a thing (and of a candidate) → its name.
+  // Echo's dictionary (its terms: name, synonyms, spellings, kind) is Echo's — transcription and search need it with
+  // this plugin off. Names go through it and the notes' own aliases; the vault mirrors it (_echo/Dictionary.md) and
+  // new names are written back through Echo, never kept as a second dictionary here. Until Echo gives plugins its
+  // dictionary (ctx.echo.read('dictionary'), ctx.echo.dictionary.add), the notes' aliases alone.
+  const coreTerms = () => {
+    try { const d = ctx.echo.read('dictionary'); return (Array.isArray(d) ? d : (d && d.terms) || []).filter((t) => t && t.name) } catch { return [] }
+  }
+  const termNames = (t) => [t.name, ...(t.synonyms || []), ...(t.spellings || [])].filter((n) => kn(n).length >= 2)
   // Spelled with or without spaces (“Swissre”, “Swiss Re”) it is the same name.
-  const dictionary = (things, pending) => {
+  const dictionary = (things, pending, terms = coreTerms()) => {
     const d = new Map()
-    for (const [name, x] of [...Object.entries(pending), ...Object.entries(things)]) for (const n of [name, ...(x.aliases || [])]) if (kn(n).length >= 2) { d.set(kn(n), name); d.set(kn(n).replace(/ /g, ''), name) }
+    const put = (n, name) => { d.set(kn(n), name); d.set(kn(n).replace(/ /g, ''), name) }
+    for (const [name, x] of [...Object.entries(pending), ...Object.entries(things)]) for (const n of [name, ...(x.aliases || [])]) if (kn(n).length >= 2) put(n, name)
+    // A term's every name leads to the note one of them is (else to the term's own name: a new thing is named so).
+    for (const t of terms) {
+      const names = termNames(t)
+      const at = names.map((n) => d.get(kn(n)) || d.get(kn(n).replace(/ /g, ''))).find((k) => k && (things[k] || pending[k]))
+      for (const n of names) if (!d.has(kn(n))) put(n, at || t.name)
+    }
     return d
+  }
+  // A name Echo's dictionary doesn't have yet, from a note: written back through Echo (when it lets plugins).
+  const teach = (name, x, terms) => {
+    const add = ctx.echo && ctx.echo.dictionary && ctx.echo.dictionary.add
+    if (typeof add !== 'function') return
+    const known = new Set(terms.flatMap(termNames).map(kn))
+    const fresh = [name, ...(x.aliases || [])].filter((n) => !known.has(kn(n)))
+    if (!fresh.length) return
+    try { add({ name, synonyms: (x.aliases || []).filter((a) => !known.has(kn(a))), kind: x.type }) } catch (e) { ctx.log(`dictionary: ${(e && e.message) || e}`) }
   }
   const lookup = (dict, n) => dict.get(kn(n)) || dict.get(kn(n).replace(/ /g, ''))
   // Echo's clients are things from the start (their names, aliases and echo:// link).
@@ -843,8 +867,10 @@ Knowledge only. Echo keeps everything else — calls, mail, people, threads, cli
     const { things, pending, removed } = st
     const check = kn(`${src.text || ''} ${src.check || ''}`)
     const label = `${src.title}, ${src.date}`
-    const dict = dictionary(things, pending)
+    const terms = coreTerms()
+    const dict = dictionary(things, pending, terms)
     const touched = new Set()
+    const taught = new Set()
     let kept = 0, dropped = 0
     for (const e of (patch && patch.things) || []) {
       if (!e || !K_TYPES[e.type] || !e.name) { dropped += ((e && e.observations) || []).length; continue }
@@ -853,7 +879,9 @@ Knowledge only. Echo keeps everything else — calls, mail, people, threads, cli
       const isThing = known && things[known]
       const key = known || String(e.name).trim()
       const x = isThing ? things[key] : (pending[key] = pending[key] || { type: e.type, aliases: [], summary: '', obs: [], history: [], rels: [], threads: [], sources: [] })
+      const had = (x.aliases || []).length
       x.aliases = [...new Set([...(x.aliases || []), ...names.filter((n) => kn(n) !== kn(key))])]
+      if (isThing && x.aliases.length !== had) taught.add(key)
       if (!x.summary && e.summary) x.summary = String(e.summary).trim().slice(0, 400)
       for (const t of src.threads || []) if (!(x.threads || []).some(([id]) => id === t.id)) (x.threads = x.threads || []).push([t.id, t.name])
       // Out of date: moved to History (a quote of this note's, said by the model).
@@ -874,7 +902,8 @@ Knowledge only. Echo keeps everything else — calls, mail, people, threads, cli
       if (!isThing && !x.sources.includes(src.id) && x.obs.some((o) => o.src === src.id)) x.sources.push(src.id)
     }
     // A candidate named by a second source becomes a note.
-    for (const [name, x] of Object.entries(pending)) if ((x.sources || []).length >= 2) { const { sources, ...thing } = x; things[name] = thing; delete pending[name]; touched.add(name) }
+    for (const [name, x] of Object.entries(pending)) if ((x.sources || []).length >= 2) { const { sources, ...thing } = x; things[name] = thing; delete pending[name]; touched.add(name); taught.add(name) }
+    for (const name of taught) if (things[name] && things[name].obs.length) teach(name, things[name], terms)
     for (const name of touched) {
       const x = things[name]
       if (!x) continue
@@ -916,6 +945,8 @@ Knowledge only. Echo keeps everything else — calls, mail, people, threads, cli
       if (list.length) lines.push(`## ${folder}`, ...list.map(([n, x]) => `- [[${safeName(n)}]]${x.summary ? ` — ${String(x.summary).split(/(?<=\.)\s/)[0].slice(0, 160)}` : ''}`), '')
     }
     changes.push({ path: 'index.md', text: lines.join('\n') })
+    const terms = coreTerms()
+    if (terms.length) changes.push({ path: '_echo/Dictionary.md', text: ['# Dictionary', '', 'Echo\'s dictionary, mirrored (Echo keeps it: change it in Echo). Each name, then the other names it goes by.', '', ...terms.slice().sort((a, b) => a.name.localeCompare(b.name)).map((t) => `- **${t.name}**${t.kind ? ` (${t.kind})` : ''}${termNames(t).length > 1 ? ` — ${termNames(t).slice(1).join(', ')}` : ''}`)].join('\n') + '\n' })
     if (logLine) changes.push({ path: 'log.md', text: `${(ctx.store.read('vault/log.md') || '# Log\n').replace(/\n*$/, '\n')}- [${new Date().toISOString().slice(0, 10)}] ${logLine}\n` })
     echoWrite(changes)
   }
