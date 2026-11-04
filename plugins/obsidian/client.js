@@ -131,7 +131,7 @@ export function apply(ctx) {
       // While a vault is being read, or sources are read into Knowledge, the page follows it.
       const busy = data && (data.vaults.some((v) => v.state === 'analysing') || ((data.knowledge || {}).queue > 0))
       const w = ctx.where()
-      if (busy && (here() || /^obsidian:/.test(w.tab || '') || (w.view === 'settings' && /knowledge/i.test(w.section || '')))) setTimeout(load, 2500)
+      if (busy && (here() || /^obsidian:/.test(w.tab || '') || (w.view === 'settings' && w.section === 'brain'))) setTimeout(load, 2500)
     })()
     return loading
   }

@@ -735,6 +735,8 @@ of Echo's is copied here.
 - **An observation**: \`- [category] one sentence — “exact words, ≤ 25” ([source, date](echo://…))\`. No quote, no observation.
 - **A relation**: \`- <type> [[Other thing]]\`, only to notes that exist.
 - **Names** go through the dictionary (aliases) first; a new note only when two sources say it.
+- **Work** (a thread's tasks, decisions and questions) is Echo's: a note points at it with \`echo://task/<thread>/<item>\`,
+  never copies it.
 - **Time**: a newer observation that contradicts an older one doesn't erase it; the older one moves to History.
 - **index.md** lists every note in one line; **log.md** records each source read.
 - Echo writes a note's summary, Observations, Relations and History; anything else in a note is yours and stays.
@@ -946,7 +948,8 @@ of Echo's is copied here.
   const kPublish = (st, touched, logLine) => {
     const changes = []
     const terms = coreTerms()
-    if (ctx.store.read('vault/_echo/Rules.md') == null) {
+    // The rules and types are Echo's: written again whenever this plugin's change them.
+    if (ctx.store.read('vault/_echo/Rules.md') !== K_RULES) {
       changes.push({ path: '_echo/Rules.md', text: K_RULES })
       for (const [t, folder] of Object.entries(K_TYPES)) changes.push({ path: `_echo/Types/${t[0].toUpperCase() + t.slice(1)}.md`, text: `---\ntype: echo-type\nfolder: ${folder}\n---\n# ${t[0].toUpperCase() + t.slice(1)}\n` })
     }
