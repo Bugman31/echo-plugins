@@ -355,7 +355,7 @@ export function apply(ctx) {
       const k = data.knowledge || {}
       // Notes written since it was drawn: read again.
       if (k.notes !== A.echoN) { A.echoN = k.notes; delete A.browse.echo; for (const key of Object.keys(A.graph)) if (key.startsWith('echo|')) delete A.graph[key]; for (const key of Object.keys(A.notes)) if (key.startsWith('echo|')) delete A.notes[key] }
-      if (!k.on) return `<div class="ob-empty"><span class="obs-icon">${BRAIN(22)}</span><h2 style="margin:0">Echo’s knowledge is off</h2><p class="set-sub">Turned on, Echo keeps what it learns from your calls and mail — clients, organisations, products, initiatives, documents, each fact with the words it came from — as an Obsidian vault of its own. Claude in Echo answers from it, and you can open it in Obsidian.</p><button class="btn primary" data-ob-knowledge="1">Turn it on</button>${error ? `<p class="error">${esc(error)}</p>` : ''}</div>`
+      if (!k.on) return `<div class="ob-empty"><span class="obs-icon">${BRAIN(22)}</span><h2 style="margin:0">The Brain is off</h2><p class="set-sub">Turned on, Echo keeps the lasting facts it learns from your calls and mail — clients, organisations, products, initiatives, documents, each with the words it came from in Recall — as an Obsidian vault of its own. Claude in Echo answers from it, and you can open it in Obsidian.</p><button class="btn primary" data-ob-knowledge="1">Turn it on</button>${error ? `<p class="error">${esc(error)}</p>` : ''}</div>`
       if (!k.notes) return `<div class="ob-empty"><span class="obs-icon">${BRAIN(22)}</span><h2 style="margin:0">Nothing here yet</h2><p class="set-sub">Echo’s vault fills as Echo reads your calls and mail. It is a folder of Markdown notes: ${esc(k.root || '')}</p><button class="btn" data-ob-knowledge="0">Turn it off</button></div>`
       return browserHtml(echoVaults())
     },
@@ -471,7 +471,7 @@ export function apply(ctx) {
   })
   ctx.settings.add({ render: () => ctx.ui.setCard('', [
     ctx.ui.setRow('Vaults', `${data ? data.vaults.length : '…'} connected — set them up in their own section.`, '<button class="btn" data-obs-open>Open</button>'),
-    ctx.ui.setRow('Echo’s knowledge', data && data.knowledge && data.knowledge.on ? `On — ${data.knowledge.notes} notes in Echo’s own vault (the Brain activity).` : 'Off — Echo keeps no vault of its own.', data && data.knowledge ? `<button class="btn" data-ob-knowledge="${data.knowledge.on ? '0' : '1'}">${data.knowledge.on ? 'Turn off' : 'Turn on'}</button>` : ''),
+    ctx.ui.setRow('Brain', data && data.knowledge && data.knowledge.on ? `On — ${data.knowledge.notes} notes of facts in Echo’s own vault (the Brain activity).` : 'Off — Echo keeps no facts of its own; Recall still has everything said.', data && data.knowledge ? `<button class="btn" data-ob-knowledge="${data.knowledge.on ? '0' : '1'}">${data.knowledge.on ? 'Turn off' : 'Turn on'}</button>` : ''),
   ]) })
   ctx.palette.add({ label: 'Obsidian: vaults', keywords: 'obsidian vault notes knowledge', run: () => ctx.go(`settings/${SECTION}`) })
   ctx.palette.add({ label: 'Obsidian: connect a vault', keywords: 'obsidian vault add connect', run: () => { ctx.go(`settings/${SECTION}`); addVault() } })
