@@ -138,6 +138,10 @@ export function apply(ctx) {
   // Each time the section or the activity is shown, the vaults are read again (never a stale copy after an add,
   // an analysis finished elsewhere, or the Inbox's link).
   const fresh = () => { if (data && !loading && Date.now() - loadedAt > 3000) load() }
+  // Knowledge's queue is read while the window is open — also one queued from a terminal (`knowledge_fill`): a nudge now
+  // and every minute; it stops when the plugin is gone (the call fails).
+  const wake = () => ctx.call('knowledge_wake').then(() => setTimeout(wake, 60000), () => {})
+  setTimeout(wake, 5000)
   const op = async (command, args) => {
     try { const r = await ctx.call(command, args); error = ''; await load(true); return r } catch (e) { error = e.message; await load(true); return null }
   }

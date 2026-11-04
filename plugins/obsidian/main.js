@@ -1032,8 +1032,8 @@ of Echo's is copied here.
   // start it. A terminal's `echoctl plugin call` loads the plugin anew and never runs Claude for the queue.
   const qRead = () => kRead('queue', [])
   let draining = false
-  // Queued only: the reading is started by the app's events and its window (`view {window: true}`), never here — a
-  // terminal's `knowledge_fill` queues and leaves the reading to the app.
+  // Queued only: the reading is started by the app's events and its window (`view {window: true}`, `knowledge_wake` each
+  // minute), never here — a terminal's `knowledge_fill` queues and leaves the reading to the app.
   const enqueue = (ids) => {
     const q = qRead()
     for (const id of ids) if (id && !q.includes(id)) q.push(id)
@@ -1080,6 +1080,9 @@ of Echo's is copied here.
     if (dry) return { total: list.length, new: fresh.filter((x) => !known[x.id]).length }
     return { queued: fresh.length, queue: enqueue(fresh.map((x) => x.id).reverse()) }
   })
+  // The window's nudge (every minute while it is open): a queue left by a terminal or a quit is read without waiting
+  // for an event or for Settings → Knowledge to be opened.
+  ctx.command('knowledge_wake', () => { if (knowledgeOn() && qRead().length) drain(); return { queue: qRead().length, reading: draining } })
   ctx.command('knowledge_retry', () => { const f = kRead('failed', {}); kWrite('failed', {}); return { queue: enqueue(Object.keys(f)) } })
   // A source given whole (a terminal, a test): `echoctl plugin call obsidian ingest '{"source": {...}}'`.
   ctx.command('ingest', async ({ source, force, patch }) => ingest(source, { force, patch }))
