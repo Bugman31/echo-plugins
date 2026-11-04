@@ -20,8 +20,10 @@ then on Claude in Echo knows where to look.
   moved note keeps its links.
 - **Echo's knowledge** (a switch in its Settings card, off by default): Echo keeps what it learns from your calls and
   mail as an Obsidian vault of its own, in the plugin's folder — the **Brain** activity browses it, Claude in Echo reads
-  it (the tools take `"vault": "echo"`), and you can open it in Obsidian. Echo writes it; filling it from calls and mail
-  comes next.
+  it (the tools take `"vault": "echo"`), and you can open it in Obsidian. Each new source (a call's minutes, a mail's
+  facts) is read once by a small Claude run; the plugin keeps only observations whose exact words are in the source,
+  links each to its moment (`echo://…`), moves what a newer one replaces to History, makes a note only once a second
+  source names a thing, and never puts back an observation you deleted. Your own sections in a note stay yours.
 - Your vault isn't changed by Echo itself. Removing a vault from Echo takes all of this back.
 
 Needs Echo 0.7.2 or later. Part of the [Echo plugins](../../README.md) marketplace.
