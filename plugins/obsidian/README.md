@@ -10,6 +10,11 @@ then on Claude in Echo knows where to look.
 - **Claude in Echo may read the vaults** (the Claude · Echo folder session, Scheduler routines). Writing into a vault is
   the folder session's, under your own Claude Code permissions, guided by the description.
 - **The window points Claude to a client's or thread's vault** when that client or thread is open.
+- **Any folder of Markdown notes is a vault** — Obsidian need not know it. An empty folder is asked about before it is
+  connected, and gets no
+  made-up description — you write it, or Echo reads it again once it has notes.
+- **Obsidian isn't needed.** Claude works with the vault's files. When Obsidian's CLI is installed and Obsidian is
+  open, Claude uses it too — search on Obsidian's index, backlinks, and moves and renames that keep links intact.
 - Your vault isn't changed by Echo itself. Removing a vault from Echo takes all of this back.
 
 Needs Echo 0.7.2 or later. Part of the [Echo plugins](../../README.md) marketplace.

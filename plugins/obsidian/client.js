@@ -111,24 +111,51 @@ const CSS = `
 export function apply(ctx) {
   const { esc } = ctx.ui
   let data = null, error = '', sel = null, q = '', editing = null, draft = '', menu = false, removing = false
+  let pending = null, notice = '' // a picked folder waiting for "connect anyway"; a one-line note above the vault
+  let loading = null, loadedAt = 0, seen = ''
 
   // Echo takes its style and listeners out when it is switched off or updated (no doubled clicks after an update).
   ctx.ui.style(CSS)
   const here = () => { const w = ctx.where(); return w.view === 'settings' && w.section === SECTION }
-  const load = async () => {
-    try { data = await ctx.call('view'); error = '' } catch (e) { error = e.message }
-    if (data && (!sel || !data.vaults.some((v) => v.id === sel))) sel = (data.vaults.find((v) => v.state !== 'ready') || data.vaults[0] || {}).id || null
-    if (!editing) ctx.render()
-    if (here() && data && data.vaults.some((v) => v.state === 'analysing')) setTimeout(load, 2500)
+  // `view` again: one request at a time; `force` waits for one in flight and asks again (it may predate a change).
+  // The window is drawn again only when something changed (typing in a field keeps its focus).
+  const load = (force) => {
+    if (loading) return force ? loading.then(() => load(true)) : loading
+    loading = (async () => {
+      let changed = !!force
+      try { const d = await ctx.call('view'); const j = JSON.stringify(d); changed = changed || j !== seen || !!error; seen = j; data = d; error = '' } catch (e) { changed = changed || error !== e.message; error = e.message }
+      loadedAt = Date.now(); loading = null
+      if (data && (!sel || !data.vaults.some((v) => v.id === sel))) sel = (data.vaults.find((v) => v.state !== 'ready') || data.vaults[0] || {}).id || null
+      if (changed && !editing) ctx.render()
+      if (here() && data && data.vaults.some((v) => v.state === 'analysing')) setTimeout(load, 2500)
+    })()
+    return loading
   }
+  // Each time the section or the activity is shown, the vaults are read again (never a stale copy after an add,
+  // an analysis finished elsewhere, or the Inbox's link).
+  const fresh = () => { if (data && !loading && Date.now() - loadedAt > 3000) load() }
   const op = async (command, args) => {
-    try { const r = await ctx.call(command, args); error = ''; await load(); return r } catch (e) { error = e.message; ctx.render(); return null }
+    try { const r = await ctx.call(command, args); error = ''; await load(true); return r } catch (e) { error = e.message; await load(true); return null }
+  }
+  const addVault = async (args) => {
+    const r = await op('add', args)
+    if (!r || r.cancelled) return
+    if (r.check) { pending = r.check; return ctx.render() }
+    pending = null
+    if (r.id) { sel = r.id; editing = null; menu = false; removing = false; notice = r.already ? 'That folder is connected already — here it is.' : ''; ctx.render() }
+  }
+  const pendingHtml = () => {
+    if (!pending) return ''
+    const folder = pending.root.split(/[\\/]/).filter(Boolean).pop() || pending.root
+    return `<div class="obs-banner" style="text-align:left"><span class="obs-dot warn"></span><div style="flex:1"><b>${esc(folder)} has no notes yet.</b>
+      There is nothing to describe; you would write the description yourself, or Echo reads it again once it has notes. Connect it anyway?</div>
+      <button class="btn" data-obs-pend-no>Cancel</button><button class="btn primary" data-obs-pend-yes>Connect anyway</button></div>`
   }
   const ago = (secs) => { if (!secs) return ''; const m = Math.round((Date.now() / 1000 - secs) / 60); return m < 60 ? `changed ${Math.max(1, m)} min ago` : m < 48 * 60 ? `changed ${Math.round(m / 60)} h ago` : `changed ${Math.round(m / 1440)} days ago` }
   const nameOf = (b) => (b.client ? (data.clients.find((c) => c.id === b.client) || {}).name : (data.threads.find((t) => t.id === b.thread) || {}).name) || b.client || b.thread
   const forWhom = (v) => (v.belongs || []).map(nameOf).join(', ')
-  const dot = (v) => (v.state === 'ready' ? 'ok' : v.state === 'failed' ? 'bad' : v.state === 'review' ? 'warn' : '')
-  const sub = (v) => v.state === 'analysing' ? 'Reading it…' : v.state === 'failed' ? 'Couldn’t be read' : v.state === 'review' ? 'Check the description' : `${v.notes != null ? `${Number(v.notes).toLocaleString()} notes · ` : ''}${forWhom(v) || 'yours'}`
+  const dot = (v) => (v.state === 'ready' ? 'ok' : v.state === 'failed' ? 'bad' : v.state === 'review' || v.state === 'empty' ? 'warn' : '')
+  const sub = (v) => v.state === 'analysing' ? 'Reading it…' : v.state === 'failed' ? 'Couldn’t be read' : v.state === 'review' ? 'Check the description' : v.state === 'empty' ? 'No notes yet' : `${v.notes != null ? `${Number(v.notes).toLocaleString()} notes · ` : ''}${forWhom(v) || 'yours'}`
 
   const tabs = () => {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean)
@@ -162,7 +189,9 @@ export function apply(ctx) {
     const taken = new Set((v.belongs || []).map((b) => b.client || b.thread))
     const options = [...data.clients.filter((c) => !taken.has(c.id)).map((c) => `<option value="client:${esc(c.id)}">${esc(c.name)}</option>`), ...data.threads.filter((t) => !taken.has(t.id)).map((t) => `<option value="thread:${esc(t.id)}">Thread · ${esc(t.name)}</option>`)].join('')
     const add = options ? `<select data-obs-belong aria-label="For a client or thread"><option value="">${chips ? '+' : '+ for a client or thread'}</option>${options}</select>` : ''
-    const meta = [`<span>${esc(kind)}</span>`, chips ? `<span class="sep">·</span><span>for</span>${chips}${add}` : add ? `<span class="sep">·</span>${add}` : '', v.notes != null ? `<span class="sep">·</span><span>${Number(v.notes).toLocaleString()} notes</span>` : '', v.latest ? `<span class="sep">·</span><span>${ago(v.latest)}</span>` : '', v.git ? '<span class="sep">·</span><span>kept in git</span>' : ''].join('')
+    const meta = [`<span>${esc(kind)}</span>`, chips ? `<span class="sep">·</span><span>for</span>${chips}${add}` : add ? `<span class="sep">·</span>${add}` : '', v.notes != null ? `<span class="sep">·</span><span>${Number(v.notes).toLocaleString()} notes</span>` : '', v.latest ? `<span class="sep">·</span><span>${ago(v.latest)}</span>` : '', v.git ? '<span class="sep">·</span><span>kept in git</span>' : '',
+      v.is_vault === false ? '<span class="sep">·</span><span title="No .obsidian folder: Echo keeps its links and tags itself; open it in Obsidian with “Open folder as vault” any time">a folder of notes</span>'
+        : data.cli ? '<span class="sep">·</span><span title="Claude uses Obsidian’s CLI (search, backlinks, link-safe moves) while Obsidian is open, and the files otherwise">Obsidian CLI while Obsidian is open</span>' : ''].join('')
     const openUrl = `obsidian://open?path=${encodeURIComponent(v.root)}`
     const head = `<div class="obs-head"><span class="obs-icon">${GEM(22)}</span>
       <div style="flex:1;min-width:0"><div class="obs-name" title="${esc(v.root)}">${esc(v.name)}</div><div class="obs-meta">${meta}</div></div>
@@ -172,6 +201,7 @@ export function apply(ctx) {
     const banner = v.state === 'analysing' ? `<div class="obs-banner busy"><span class="spinner"></span><div style="flex:1"><b>Echo is reading ${esc(v.name)}.</b> It looks at the folders and the first lines of some notes, then Claude describes it — about a minute.</div></div>`
       : v.state === 'failed' ? `<div class="obs-banner bad"><div style="flex:1"><b>It couldn’t be read.</b> ${esc(v.error || '')}</div><button class="btn primary" data-obs-again>Try again</button></div>`
       : v.state === 'review' ? `<div class="obs-banner"><span class="obs-dot warn"></span><div style="flex:1"><b>Echo read this vault for the first time.</b> Check what Claude will be told about it, fix what’s wrong, then confirm.</div><button class="btn primary" data-obs-confirm>Looks right</button></div>`
+      : v.state === 'empty' ? `<div class="obs-banner"><span class="obs-dot warn"></span><div style="flex:1"><b>No notes here yet.</b> Echo has nothing to describe. Write below what Claude should know about it and confirm, or read it again once it has notes.</div><button class="btn" data-obs-again>Read it again</button>${d.when ? '<button class="btn primary" data-obs-confirm>Looks right</button>' : ''}</div>`
       : v.proposed ? `<div class="obs-banner"><div style="flex:1"><b>Echo read it again.</b> A new description is ready — yours stays until you choose.</div><button class="btn" data-obs-proposed="0">Keep mine</button><button class="btn primary" data-obs-proposed="1">Use the new one</button></div>` : ''
     const removeAsk = removing ? `<div class="confirm"><span>Remove ${esc(v.name)} from Echo? Claude in Echo stops seeing it; the vault itself isn’t touched.</span><button class="btn" data-obs-remove-cancel>Cancel</button><button class="btn primary" style="background:var(--danger);border-color:var(--danger)" data-obs-remove-yes>Remove</button></div>` : ''
     const inside = (v.inside || []).slice(0, 10)
@@ -181,7 +211,7 @@ export function apply(ctx) {
       <div class="obs-legend">${inside.map((f, i) => `<span class="${f.skip ? 'sk' : ''}"><span class="sw" style="background:${f.skip ? 'var(--line-strong)' : COLORS[i % COLORS.length]}"></span>${esc(f.name)}${f.skip ? ' · left alone' : ''} <span class="c">${f.n}</span></span>`).join('')}</div></section>` : ''
     const desc = v.state === 'analysing' && !d.when ? '' : `<section class="obs-card"><div style="display:flex;align-items:center;gap:8px;margin:2px 0 4px"><b style="font-size:13px;font-weight:650;flex:1">What Claude knows about it</b><span class="set-sub">click any part to change it</span></div>
       ${part(v, 'when', 'When Claude looks here', d.when)}${PARTS.map(([k, l]) => part(v, k, l, d[k])).join('')}</section>`
-    return `<div class="obs-main">${head}${removeAsk}${banner}${error ? `<p class="error">${esc(error)}</p>` : ''}${insideCard}${desc}</div>`
+    return `<div class="obs-main">${pendingHtml()}${notice ? `<p class="set-sub">${esc(notice)}</p>` : ''}${head}${removeAsk}${banner}${error ? `<p class="error">${esc(error)}</p>` : ''}${insideCard}${desc}</div>`
   }
 
   // ── the Obsidian activity: browse a vault as Obsidian shows it ──
@@ -299,6 +329,7 @@ export function apply(ctx) {
     icon: GEM(20),
     render() {
       if (!data) { if (!error) load(); return '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' }
+      fresh()
       const vaults = data.vaults.filter((v) => v.confirmed || v.state === 'ready')
       if (!vaults.length) return `<div class="ob-empty"><span class="obs-icon">${GEM(22)}</span><h2 style="margin:0">No vault to browse yet</h2><p class="set-sub">Connect a vault you already have; once you confirm what Echo tells Claude about it, it opens here.</p><button class="btn primary" data-ob-settings>Connect a vault</button></div>`
       const r = route()
@@ -389,13 +420,14 @@ export function apply(ctx) {
     id: 'main',
     label: 'Obsidian',
     icon: GEM(16),
-    badge: () => (data ? data.vaults.filter((v) => v.state === 'review' || v.state === 'failed').length || '' : ''),
+    badge: () => (data ? data.vaults.filter((v) => v.state === 'review' || v.state === 'failed' || v.state === 'empty').length || '' : ''),
     render() {
-      if (!data) { if (!error) load(); return error ? `<p class="error">${esc(error)}</p>` : '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' }
+      if (!data) { if (!error) load(); return error ? `<p class="error">${esc(error)}</p><button class="btn" data-obs-reload>Try again</button>` : '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' }
+      fresh()
       if (!data.vaults.length) {
         return `<div class="obs-empty" style="padding-top:80px"><span class="obs-icon">${GEM(22)}</span><h2 style="margin:0">Your Obsidian vaults</h2>
           <p class="set-sub">Connect a vault you already have. Echo reads it and describes it for Claude — what it is, where things are, what Claude may do with it — you correct that, and Claude in Echo knows where to look. Your vault isn’t changed by Echo.</p>
-          <button class="btn primary" data-obs-add>+ Vault</button>${error ? `<p class="error">${esc(error)}</p>` : ''}</div>`
+          ${pendingHtml() || '<button class="btn primary" data-obs-add>+ Vault</button>'}${error ? `<p class="error">${esc(error)}</p>` : ''}</div>`
       }
       const v = data.vaults.find((x) => x.id === sel) || data.vaults[0]
       return `<div class="obs">${tabs()}${detail(v)}</div>`
@@ -403,16 +435,19 @@ export function apply(ctx) {
   })
   ctx.settings.add({ render: () => ctx.ui.setCard('', [ctx.ui.setRow('Vaults', `${data ? data.vaults.length : '…'} connected — set them up in their own section.`, '<button class="btn" data-obs-open>Open</button>')]) })
   ctx.palette.add({ label: 'Obsidian: vaults', keywords: 'obsidian vault notes knowledge', run: () => ctx.go(`settings/${SECTION}`) })
-  ctx.palette.add({ label: 'Obsidian: connect a vault', keywords: 'obsidian vault add connect', run: () => { ctx.go(`settings/${SECTION}`); op('add') } })
+  ctx.palette.add({ label: 'Obsidian: connect a vault', keywords: 'obsidian vault add connect', run: () => { ctx.go(`settings/${SECTION}`); addVault() } })
 
   const cur = () => data && data.vaults.find((v) => v.id === sel)
   ctx.listen('click', async (ev) => {
-    const t = ev.target.closest && ev.target.closest('[data-obs-sel],[data-obs-add],[data-obs-edit],[data-obs-cancel],[data-obs-save],[data-obs-confirm],[data-obs-again],[data-obs-menu],[data-obs-remove],[data-obs-remove-yes],[data-obs-remove-cancel],[data-obs-rename],[data-obs-unbelong],[data-obs-proposed],[data-obs-open]')
+    const t = ev.target.closest && ev.target.closest('[data-obs-sel],[data-obs-add],[data-obs-edit],[data-obs-cancel],[data-obs-save],[data-obs-confirm],[data-obs-again],[data-obs-menu],[data-obs-remove],[data-obs-remove-yes],[data-obs-remove-cancel],[data-obs-rename],[data-obs-unbelong],[data-obs-proposed],[data-obs-open],[data-obs-pend-yes],[data-obs-pend-no],[data-obs-reload]')
     if (!t) { if (menu && here()) { menu = false; ctx.render() } return }
     const d = t.dataset
     if ('obsOpen' in d) return ctx.go(`settings/${SECTION}`)
-    if (d.obsSel) { sel = d.obsSel; editing = null; menu = false; removing = false; return ctx.render() }
-    if ('obsAdd' in d) { const r = await op('add'); if (r && r.id) { sel = r.id; await load() } return }
+    if ('obsReload' in d) { error = ''; data = null; ctx.render(); return load(true) }
+    if ('obsPendYes' in d) return pending && addVault({ root: pending.root, anyway: true })
+    if ('obsPendNo' in d) { const p = pending; pending = null; ctx.render(); if (p) ctx.call('unpick', { root: p.root }).catch(() => {}); return }
+    if (d.obsSel) { notice = ''; sel = d.obsSel; editing = null; menu = false; removing = false; return ctx.render() }
+    if ('obsAdd' in d) return addVault()
     if (d.obsEdit) { if (editing) return; const v = cur(); editing = d.obsEdit; draft = (v.description || {})[editing] || ''; ctx.render(); const ta = document.getElementById('obs-draft'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length) } return }
     if ('obsCancel' in d) { editing = null; return ctx.render() }
     if (d.obsSave) { const ta = document.getElementById('obs-draft'); const key = d.obsSave; editing = null; await op('save', { id: sel, key, text: ta ? ta.value : draft }); return }

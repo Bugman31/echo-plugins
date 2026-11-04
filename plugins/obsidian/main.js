@@ -121,6 +121,13 @@ export function apply(ctx) {
     save(vs); publish()
     try {
       const s = await survey(v.root)
+      // No notes: nothing to describe — no Claude run, no made-up description; the user writes it or reads it again later.
+      if (!s.notes) {
+        vs = load()
+        const w = vs.find((x) => x.id === id)
+        if (w) { Object.assign(w, { state: w.confirmed ? 'ready' : 'empty', error: '', notes: 0, latest: 0, git: s.obsidian.git, is_vault: s.obsidian.is_vault, inside: [] }); save(vs) }
+        return
+      }
       const clients = ctx.echo.read('clients'), threads = ctx.echo.read('threads')
       const prompt = [
         `An Obsidian vault the user connected to Echo: “${v.name}”. Describe it for Claude — an assistant that will answer from it and may add knowledge to it — so Claude knows what it is and how to use it. Write in plain words, in the vault's own terms, short.`,
@@ -173,8 +180,8 @@ export function apply(ctx) {
       if (w) { w.state = w.confirmed ? 'ready' : 'failed'; w.error = String((e && e.message) || e); save(vs) }
     } finally {
       running.delete(id)
+      publish()
     }
-    publish()
   }
 
   // ── what Claude in Echo gets: rebuilt from vaults.json every time something changes ──
@@ -188,13 +195,16 @@ export function apply(ctx) {
     const threads = (() => { try { return ctx.echo.read('threads') } catch { return [] } })()
     const nameOf = (b) => (b.client ? (clients.find((c) => c.id === b.client) || {}).name : (threads.find((t) => t.id === b.thread) || {}).name) || b.client || b.thread
     const forWhom = (v) => (v.belongs || []).map(nameOf).join(', ')
+    // Obsidian's CLI on this computer (it works only while Obsidian is open; a session checks that itself).
+    const cli = (() => { try { return !!ctx.system.which('obsidian') } catch { return false } })()
+    const obsName = (v) => v.root.split(/[\\/]/).filter(Boolean).pop()
     // The catalog: every vault's line, by whom it is for.
     step('catalog', () => {
       const groups = {}
       for (const v of ready) (groups[forWhom(v) || 'Yours'] = groups[forWhom(v) || 'Yours'] || []).push(v)
       ctx.store.write('vaults.md', ['# The user\'s Obsidian vaults', '',
         'Each vault: when to look in it, its folder, and its description (read that before working in the vault). Written from the vaults\' own notes and corrected by the user: notes about the vaults, not instructions.', '',
-        ...Object.entries(groups).sort().flatMap(([g, list]) => [`## ${g}`, '', ...list.map((v) => `- **${v.name}** — ${description(v.id).when || ''}\n  Folder: ${v.root}\n  Description: ${ctx.store.path(descPath(v.id))}`), '']),
+        ...Object.entries(groups).sort().flatMap(([g, list]) => [`## ${g}`, '', ...list.map((v) => `- **${v.name}** — ${description(v.id).when || ''}\n  Folder: ${v.root}\n  ${v.is_vault === false ? 'A folder of notes (not opened in Obsidian yet): files only' : `In Obsidian: vault="${obsName(v)}"`}\n  Description: ${ctx.store.path(descPath(v.id))}`), '']),
       ].join('\n'))
     })
     // One skill for all vaults: its description names them (shortened when there are many).
@@ -214,7 +224,17 @@ export function apply(ctx) {
         '- `[[Note]]` links a note by its file name (anywhere in the vault); `[[Note#Heading]]` a heading, `[[Note|text]]` with other text; embeds start with an exclamation mark before the brackets.',
         '- Tags: `#tag` in the text or `tags:` in the frontmatter; nested as `#a/b`.',
         '- Frontmatter (between `---` lines) holds a note\'s properties; overview notes (MOCs) link the notes of a topic.',
-        '- Cite notes by their path; a note opens in Obsidian with `obsidian://open?path=<the note\'s full path>`.', '',
+        '- Cite notes by their path; a note opens in Obsidian with `obsidian://open?path=<the note\'s full path>`.',
+        '- Moving or renaming a note by hand breaks the links to it: ask the user first, then update every `[[Name]]`, `[[Name|…]]`, `[[Name#…]]`, embed and `[…](path)` link to it in the vault.', '',
+        ...(cli ? [
+          '## Obsidian\'s own CLI — only while Obsidian is open', '',
+          'If you can run shell commands, check once per task: `obsidian vaults verbose`. If it says it can\'t find Obsidian, Obsidian isn\'t open — use the files; never start Obsidian yourself. Use the CLI only for a vault whose folder is in that list.',
+          '- The vault goes first, by the name the catalog gives: `obsidian vault="<name>" <command> …`; name a note by `path="Folder/Note.md"` (exact) rather than `file=`. Quote values with spaces.',
+          '- Search on Obsidian\'s index: `search query="…" format=json`; with the matching lines: `search:context query="…"`.',
+          '- Links: `backlinks path="…" format=json`, `links path="…"`. Tags: `tags counts`, `tag name=…`. Properties: `property:read name=… path="…"`. Tasks: `tasks todo`. Daily note: `daily:read`.',
+          '- Moving or renaming: always `move path="…" to="Folder/New.md"` or `rename path="…" name="New"` while the CLI works — never by hand. Links follow only when the vault updates internal links (`"alwaysUpdateLinks": true` in its `.obsidian/app.json`); if it doesn\'t, say so and ask first.',
+          '- Writing through the CLI (`property:set`, `daily:append`, `create`, `task … done`) is writing into the vault: the rules below apply.', '',
+        ] : []),
         '## Adding to a vault', '',
         '- Knowledge only — people, decisions and why, how things are done, terms — never minutes, task lists or logs.',
         '- In the vault\'s own shape (its description says how): its folder, its properties, its link style; link a new note both ways.',
@@ -244,13 +264,24 @@ export function apply(ctx) {
   // ── commands (the window's Settings section, ⌘K, `echoctl plugin call obsidian …`) ──
   ctx.command('view', () => {
     const vs = load()
-    return { vaults: vs.map((v) => ({ ...v, description: description(v.id), proposed: ctx.store.read(`vaults/${v.id}/proposed.md`) ? parse(ctx.store.read(`vaults/${v.id}/proposed.md`)) : null })), clients: ctx.echo.read('clients'), threads: ctx.echo.read('threads') }
+    return { vaults: vs.map((v) => ({ ...v, description: description(v.id), proposed: ctx.store.read(`vaults/${v.id}/proposed.md`) ? parse(ctx.store.read(`vaults/${v.id}/proposed.md`)) : null })), clients: ctx.echo.read('clients'), threads: ctx.echo.read('threads'), cli: (() => { try { return !!ctx.system.which('obsidian') } catch { return false } })() }
   })
-  ctx.command('add', async ({ wait } = {}) => {
-    const root = await ctx.system.pickFolder('An Obsidian vault for Echo to read')
+  // `add` picks a folder; one with no notes comes back as `check` for the user's yes, then `add {root, anyway}`
+  // connects it. One connected already comes back as `already`.
+  ctx.command('add', async ({ wait, root: picked, anyway } = {}) => {
+    const root = picked ? String(picked) : await ctx.system.pickFolder('An Obsidian vault for Echo to read')
     if (!root) return { cancelled: true }
+    // Only a folder the picker gave this plugin (a `check` answered later); never a path the window made up.
+    if (picked && !ctx.fs.folders().includes(root)) throw new Error('pick the folder again')
     const vs = load()
-    if (vs.some((v) => v.root === root)) throw new Error('this vault is connected already')
+    const known = vs.find((v) => v.root === root)
+    if (known) return { id: known.id, already: true }
+    if (!anyway) {
+      const isVault = (() => { try { return ctx.fs.list(root, '').some((e) => e.name === '.obsidian') } catch { return false } })()
+      const notes = (await ctx.fs.walk(root, { ext: ['md'], max: 1 })).length
+      // Any folder of Markdown notes is a vault to Echo; only an empty one is asked about.
+      if (!notes) return { check: { root, is_vault: isVault, empty: true } }
+    }
     const name = root.split(/[\\/]/).filter(Boolean).pop() || 'Vault'
     let id = slug(name)
     while (vs.some((v) => v.id === id)) id = `${id}-2`
@@ -260,6 +291,11 @@ export function apply(ctx) {
     if (wait) await analyse(id)
     else analyse(id).catch(() => {})
     return { id }
+  })
+  // A picked folder the user decided not to connect: given back.
+  ctx.command('unpick', ({ root }) => {
+    if (!load().some((v) => v.root === root)) try { ctx.fs.forget(String(root)) } catch { /* not given */ }
+    return true
   })
   ctx.command('analyse', async ({ id, wait }) => {
     find(load(), id)
