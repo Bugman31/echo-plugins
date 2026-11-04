@@ -130,7 +130,8 @@ export function apply(ctx) {
       if (changed && !editing) ctx.render()
       // While a vault is being read, or sources are read into Knowledge, the page follows it.
       const busy = data && (data.vaults.some((v) => v.state === 'analysing') || ((data.knowledge || {}).queue > 0))
-      if (busy && (here() || /^obsidian:/.test(ctx.where().tab || ''))) setTimeout(load, 2500)
+      const w = ctx.where()
+      if (busy && (here() || /^obsidian:/.test(w.tab || '') || (w.view === 'settings' && /knowledge/i.test(w.section || '')))) setTimeout(load, 2500)
     })()
     return loading
   }
@@ -493,9 +494,24 @@ export function apply(ctx) {
       return `<div class="obs">${tabs()}${detail(v)}</div>`
     },
   })
+  // Knowledge's switch, how far its reading is, and the first fill: a card in Settings → Knowledge (Echo's slot), else a
+  // row on this plugin's card.
+  const hasSlot = (name) => { try { return ctx.slots && ctx.slots.list().includes(name) } catch { return false } }
+  const inKnowledgeSettings = hasSlot('knowledge.settings')
+  const knowledgeRows = () => {
+    if (!data) { if (!error) load(); return [ctx.ui.setRow('Notes', '…', '')] }
+    fresh()
+    const k = data.knowledge || {}
+    const rows = [ctx.ui.setRow('Notes', k.on ? `On — ${k.notes} note${k.notes === 1 ? '' : 's'} of what Echo knows about things (Knowledge → Notes), each fact linking back to Recall.` : 'Off — Echo keeps no notes of its own; Recall still has everything said.',
+      `<button class="btn" data-ob-knowledge="${k.on ? '0' : '1'}">${k.on ? 'Turn off' : 'Turn on'}</button>`)]
+    if (k.on && (k.queue || k.failed)) rows.push(ctx.ui.setRow('Reading', `${k.queue ? `${k.queue} source${k.queue === 1 ? '' : 's'} to read` : ''}${k.queue && k.failed ? ' · ' : ''}${k.failed ? `${k.failed} couldn’t be read` : ''}`, k.failed ? '<button class="btn" data-ob-retry-k>Try again</button>' : '<span class="spinner"></span>'))
+    if (k.on && !k.queue) rows.push(ctx.ui.setRow('Read what was said before', 'Calls and mail from before Knowledge was on, read once — counted and priced first.', fillHtml()))
+    return rows
+  }
+  if (inKnowledgeSettings) ctx.slots.add('knowledge.settings', { label: 'Notes', render: () => knowledgeRows().join('') })
   ctx.settings.add({ render: () => ctx.ui.setCard('', [
     ctx.ui.setRow('Vaults', `${data ? data.vaults.length : '…'} connected — set them up in their own section.`, '<button class="btn" data-obs-open>Open</button>'),
-    ctx.ui.setRow('Knowledge', data && data.knowledge && data.knowledge.on ? `On — ${data.knowledge.notes} notes in Echo’s own vault (Knowledge → Notes)${data.knowledge.queue ? ` · reading ${data.knowledge.queue} source${data.knowledge.queue === 1 ? '' : 's'}` : ''}${data.knowledge.failed ? ` · ${data.knowledge.failed} couldn’t be read` : ''}.` : 'Off — Echo keeps no facts of its own; Recall still has everything said.', data && data.knowledge ? `<button class="btn" data-ob-knowledge="${data.knowledge.on ? '0' : '1'}">${data.knowledge.on ? 'Turn off' : 'Turn on'}</button>` : ''),
+    ...(inKnowledgeSettings ? [] : knowledgeRows()),
   ]) })
   ctx.palette.add({ label: 'Obsidian: vaults', keywords: 'obsidian vault notes knowledge', run: () => ctx.go(`settings/${SECTION}`) })
   ctx.palette.add({ label: 'Obsidian: connect a vault', keywords: 'obsidian vault add connect', run: () => { ctx.go(`settings/${SECTION}`); addVault() } })
