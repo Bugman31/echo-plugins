@@ -12,7 +12,14 @@
     "echo": {
       "read": [
         "clients",
-        "threads"
+        "threads",
+        "dictionary",
+        "source",
+        "calls",
+        "people"
+      ],
+      "write": [
+        "dictionary"
       ]
     },
     "sessions": {
