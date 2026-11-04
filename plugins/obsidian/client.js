@@ -2,6 +2,7 @@
 // the chosen vault: who it is for, what is inside, and what Claude will be told about it — each part edited in place.
 
 const GEM = (n) => `<svg width="${n}" height="${n}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5 19 8l-2 10-5 3.5L7 18 5 8z"/><path d="M12 2.5 10 12l2 9.5M5 8l5 4 7 6M19 8l-9 4"/></svg>`
+const BRAIN = (n) => `<svg width="${n}" height="${n}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="7" r="2.2"/><circle cx="12" cy="13" r="2.4"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="18.5" r="2.2"/><path d="M7.9 7.2 10.2 11.4M16.2 8.4 13.8 11.5M10.3 14.6 7.6 16.6M13.9 14.6 16.4 17"/></svg>`
 const SECTION = 'obsidian:main'
 const PARTS = [
   ['what', 'What it is'],
@@ -215,7 +216,7 @@ export function apply(ctx) {
   }
 
   // ── the Obsidian activity: browse a vault as Obsidian shows it ──
-  const A = { browse: {}, notes: {}, opens: {}, tabs: {}, side: 'files', q: '', tag: '', folded: new Set(), gmode: 'links', color: 'folder', graph: {}, loading: {}, errors: {}, zoomed: new Set() }
+  const A = { base: 'obsidian:vaults', echoN: -1, browse: {}, notes: {}, opens: {}, tabs: {}, side: 'files', q: '', tag: '', folded: new Set(), gmode: 'links', color: 'folder', graph: {}, loading: {}, errors: {}, zoomed: new Set() }
   // Open notes and the chosen tab, per vault.
   const opened = (vault) => (A.opens[vault] = A.opens[vault] || [])
   const PAL = ['#4fb3d9', '#9b78ff', '#e0a96d', '#3ccf91', '#e07fa3', '#5f8fe0', '#d9c84f', '#7fd0c0', '#f0a24a', '#b98cff']
@@ -232,7 +233,7 @@ export function apply(ctx) {
   const openNote = (vault, path) => {
     if (!opened(vault).includes(path)) opened(vault).push(path)
     A.tabs[vault] = path
-    ctx.go(`obsidian:vaults/${vault}/${encodeURIComponent(path)}`)
+    ctx.go(`${A.base}/${vault}/${encodeURIComponent(path)}`)
   }
   // The note's HTML with its wikilinks as links — replaced in text only (never in an attribute or code), its own
   // title as a first heading left out (it is shown above).
@@ -328,32 +329,46 @@ export function apply(ctx) {
     label: 'Obsidian',
     icon: GEM(20),
     render() {
+      A.base = 'obsidian:vaults'
       if (!data) { if (!error) load(); return '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' }
       fresh()
       const vaults = data.vaults.filter((v) => v.confirmed || v.state === 'ready')
       if (!vaults.length) return `<div class="ob-empty"><span class="obs-icon">${GEM(22)}</span><h2 style="margin:0">No vault to browse yet</h2><p class="set-sub">Connect a vault you already have; once you confirm what Echo tells Claude about it, it opens here.</p><button class="btn primary" data-ob-settings>Connect a vault</button></div>`
-      const r = route()
-      const v = vaults.find((x) => x.id === r.vault) || vaults[0]
-      const b = A.browse[v.id]
-      if (!b) { fetchOnce(`b:${v.id}`, async () => { A.browse[v.id] = await ctx.call('browse', { id: v.id }) }); return failed(`b:${v.id}`) || '<div class="skeleton" style="padding:20px"><i></i><i></i><p class="set-sub">Reading the vault…</p></div>' }
-      const open = opened(v.id)
-      if (r.path && r.path !== 'graph' && !open.includes(r.path)) open.push(r.path)
-      const cur = A.tabs[v.id] === 'graph' ? 'graph' : r.path || A.tabs[v.id] || open[open.length - 1] || ''
-      const n = cur && cur !== 'graph' ? A.notes[`${v.id}|${cur}`] : null
-      if (cur && cur !== 'graph' && !n) fetchOnce(`n:${v.id}|${cur}`, async () => { A.notes[`${v.id}|${cur}`] = await ctx.call('note', { id: v.id, path: cur }) })
-      if (cur === 'graph' && !A.graph[`${v.id}|${A.gmode}`]) fetchOnce(`g:${v.id}|${A.gmode}`, async () => { A.graph[`${v.id}|${A.gmode}`] = await ctx.call('graph', { id: v.id, mode: A.gmode }) })
-      const side = `<aside class="ob-side"><div class="ob-top">
-          ${vaults.length > 1 ? `<select class="set-in" data-ob-switch aria-label="Vault">${vaults.map((x) => `<option value="${esc(x.id)}"${x.id === v.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` : `<b style="font-size:14px">${esc(v.name)}</b>`}
-          <input class="search" id="ob-q" placeholder="Search notes" value="${esc(A.q)}" aria-label="Search notes">
-          <span class="ob-seg"><button class="${A.side === 'files' ? 'on' : ''}" data-ob-side="files">Files</button><button class="${A.side === 'tags' ? 'on' : ''}" data-ob-side="tags">Tags</button></span></div>
-        <div class="ob-tree">${A.side === 'tags' && !A.tag ? b.tags.map((t) => `<button class="ob-fx" data-ob-tag="${esc(t.tag)}">#${esc(t.tag)}<span class="n">${t.n}</span></button>`).join('') || '<p class="set-sub" style="padding:8px">No tags.</p>' : treeHtml(b, v.id, cur)}</div></aside>`
-      const tabs = `<div class="ob-tabs">${open.map((p) => { const nn = A.notes[`${v.id}|${p}`]; return `<button class="ob-tab${p === cur ? ' on' : ''}" data-ob-open="${esc(p)}" data-ob-vault="${esc(v.id)}" title="${esc(p)}">${esc(nn ? nn.title : p.split('/').pop().replace(/\.md$/, ''))} <span class="x" data-ob-close="${esc(p)}">×</span></button>` }).join('')}<button class="ob-tab${cur === 'graph' ? ' on' : ''}" data-ob-graph>Graph</button></div>`
-      const body = cur === 'graph' ? failed(`g:${v.id}|${A.gmode}`) + graphHtml(v.id) : `<div class="ob-body">${n ? noteHtml(n, v.id, v.root) : cur ? failed(`n:${v.id}|${cur}`) || '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' : '<p class="set-sub" style="padding-top:24px">Pick a note on the left, or open the Graph.</p>'}</div>`
-      return `<div class="ob">${side}<section class="ob-mid">${tabs}${body}</section><aside class="ob-right">${rightHtml(n, v.id)}</aside></div>`
+      return browserHtml(vaults)
     },
     after() {
       if (!data) return
-      const r = route(), v = (data.vaults.find((x) => x.id === r.vault) || data.vaults.find((x) => x.confirmed) || {})
+      A.base = 'obsidian:vaults'
+      browserAfter(data.vaults.filter((v) => v.confirmed || v.state === 'ready'))
+    },
+  })
+  // The Brain activity: Echo's own vault — what Echo learned from the calls and mail — browsed the same way.
+  const echoVaults = () => [{ id: 'echo', name: 'Echo', root: data.knowledge.root }]
+  if (ctx.activities) ctx.activities.add({
+    id: 'brain',
+    label: 'Brain',
+    icon: BRAIN(20),
+    render() {
+      A.base = 'obsidian:brain'
+      if (!data) { if (!error) load(); return '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' }
+      fresh()
+      const k = data.knowledge || {}
+      // Notes written since it was drawn: read again.
+      if (k.notes !== A.echoN) { A.echoN = k.notes; delete A.browse.echo; for (const key of Object.keys(A.graph)) if (key.startsWith('echo|')) delete A.graph[key]; for (const key of Object.keys(A.notes)) if (key.startsWith('echo|')) delete A.notes[key] }
+      if (!k.on) return `<div class="ob-empty"><span class="obs-icon">${BRAIN(22)}</span><h2 style="margin:0">Echo’s knowledge is off</h2><p class="set-sub">Turned on, Echo keeps what it learns from your calls and mail — clients, organisations, products, initiatives, documents, each fact with the words it came from — as an Obsidian vault of its own. Claude in Echo answers from it, and you can open it in Obsidian.</p><button class="btn primary" data-ob-knowledge="1">Turn it on</button>${error ? `<p class="error">${esc(error)}</p>` : ''}</div>`
+      if (!k.notes) return `<div class="ob-empty"><span class="obs-icon">${BRAIN(22)}</span><h2 style="margin:0">Nothing here yet</h2><p class="set-sub">Echo’s vault fills as Echo reads your calls and mail. It is a folder of Markdown notes: ${esc(k.root || '')}</p><button class="btn" data-ob-knowledge="0">Turn it off</button></div>`
+      return browserHtml(echoVaults())
+    },
+    after() {
+      if (!data || !(data.knowledge || {}).notes) return
+      A.base = 'obsidian:brain'
+      browserAfter(echoVaults())
+    },
+  })
+  function browserAfter(vaults) {
+    if (!vaults.length) return
+    {
+      const r = route(), v = (vaults.find((x) => x.id === r.vault) || vaults[0] || {})
       const g = ctx.ui.graph
       const open = opened(v.id)
       const cur = A.tabs[v.id] === 'graph' ? 'graph' : r.path || A.tabs[v.id] || open[open.length - 1] || ''
@@ -391,16 +406,37 @@ export function apply(ctx) {
         if (st && st.graph && st.graph.order < 60 && !A.zoomed.has(key)) { A.zoomed.add(key); st.sigma.getCamera().setState({ ratio: 2.2 }) }
 
       }
-    },
-  })
+    }
+  }
+  function browserHtml(vaults) {
+      const r = route()
+      const v = vaults.find((x) => x.id === r.vault) || vaults[0]
+      const b = A.browse[v.id]
+      if (!b) { fetchOnce(`b:${v.id}`, async () => { A.browse[v.id] = await ctx.call('browse', { id: v.id }) }); return failed(`b:${v.id}`) || '<div class="skeleton" style="padding:20px"><i></i><i></i><p class="set-sub">Reading the vault…</p></div>' }
+      const open = opened(v.id)
+      if (r.path && r.path !== 'graph' && !open.includes(r.path)) open.push(r.path)
+      const cur = A.tabs[v.id] === 'graph' ? 'graph' : r.path || A.tabs[v.id] || open[open.length - 1] || ''
+      const n = cur && cur !== 'graph' ? A.notes[`${v.id}|${cur}`] : null
+      if (cur && cur !== 'graph' && !n) fetchOnce(`n:${v.id}|${cur}`, async () => { A.notes[`${v.id}|${cur}`] = await ctx.call('note', { id: v.id, path: cur }) })
+      if (cur === 'graph' && !A.graph[`${v.id}|${A.gmode}`]) fetchOnce(`g:${v.id}|${A.gmode}`, async () => { A.graph[`${v.id}|${A.gmode}`] = await ctx.call('graph', { id: v.id, mode: A.gmode }) })
+      const side = `<aside class="ob-side"><div class="ob-top">
+          ${vaults.length > 1 ? `<select class="set-in" data-ob-switch aria-label="Vault">${vaults.map((x) => `<option value="${esc(x.id)}"${x.id === v.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` : `<b style="font-size:14px">${esc(v.name)}</b>`}
+          <input class="search" id="ob-q" placeholder="Search notes" value="${esc(A.q)}" aria-label="Search notes">
+          <span class="ob-seg"><button class="${A.side === 'files' ? 'on' : ''}" data-ob-side="files">Files</button><button class="${A.side === 'tags' ? 'on' : ''}" data-ob-side="tags">Tags</button></span></div>
+        <div class="ob-tree">${A.side === 'tags' && !A.tag ? b.tags.map((t) => `<button class="ob-fx" data-ob-tag="${esc(t.tag)}">#${esc(t.tag)}<span class="n">${t.n}</span></button>`).join('') || '<p class="set-sub" style="padding:8px">No tags.</p>' : treeHtml(b, v.id, cur)}</div></aside>`
+      const tabs = `<div class="ob-tabs">${open.map((p) => { const nn = A.notes[`${v.id}|${p}`]; return `<button class="ob-tab${p === cur ? ' on' : ''}" data-ob-open="${esc(p)}" data-ob-vault="${esc(v.id)}" title="${esc(p)}">${esc(nn ? nn.title : p.split('/').pop().replace(/\.md$/, ''))} <span class="x" data-ob-close="${esc(p)}">×</span></button>` }).join('')}<button class="ob-tab${cur === 'graph' ? ' on' : ''}" data-ob-graph>Graph</button></div>`
+      const body = cur === 'graph' ? failed(`g:${v.id}|${A.gmode}`) + graphHtml(v.id) : `<div class="ob-body">${n ? noteHtml(n, v.id, v.root) : cur ? failed(`n:${v.id}|${cur}`) || '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' : '<p class="set-sub" style="padding-top:24px">Pick a note on the left, or open the Graph.</p>'}</div>`
+      return `<div class="ob">${side}<section class="ob-mid">${tabs}${body}</section><aside class="ob-right">${rightHtml(n, v.id)}</aside></div>`
+  }
   ctx.listen('click', (ev) => {
-    const t = ev.target.closest && ev.target.closest('[data-ob-retry],[data-ob-open],[data-ob-close],[data-ob-graph],[data-ob-side],[data-ob-tag],[data-ob-fold],[data-ob-gmode],[data-ob-color],[data-ob-echo],[data-ob-settings],[data-ob-browse]')
+    const t = ev.target.closest && ev.target.closest('[data-ob-knowledge],[data-ob-retry],[data-ob-open],[data-ob-close],[data-ob-graph],[data-ob-side],[data-ob-tag],[data-ob-fold],[data-ob-gmode],[data-ob-color],[data-ob-echo],[data-ob-settings],[data-ob-browse]')
     if (!t) return
     const d = t.dataset
+    if (d.obKnowledge) return ctx.call('knowledge', { on: d.obKnowledge === '1' }).then(() => load(true), (e) => { error = e.message; ctx.render() })
     if (d.obRetry) { delete A.errors[d.obRetry]; return ctx.render() }
-    if (d.obClose) { ev.stopPropagation(); const r = route(), o = opened(r.vault); A.opens[r.vault] = o.filter((p) => p !== d.obClose); const next = A.opens[r.vault][A.opens[r.vault].length - 1] || ''; A.tabs[r.vault] = next; return ctx.go(`obsidian:vaults/${r.vault}${next ? '/' + encodeURIComponent(next) : ''}`) }
+    if (d.obClose) { ev.stopPropagation(); const r = route(), o = opened(r.vault); A.opens[r.vault] = o.filter((p) => p !== d.obClose); const next = A.opens[r.vault][A.opens[r.vault].length - 1] || ''; A.tabs[r.vault] = next; return ctx.go(`${A.base}/${r.vault}${next ? '/' + encodeURIComponent(next) : ''}`) }
     if (d.obOpen) return openNote(d.obVault || route().vault, d.obOpen)
-    if ('obGraph' in d) { A.tabs[route().vault || (data.vaults.find((x) => x.confirmed) || {}).id] = 'graph'; return ctx.render() }
+    if ('obGraph' in d) { A.tabs[route().vault || (A.base === 'obsidian:brain' ? 'echo' : (data.vaults.find((x) => x.confirmed) || {}).id)] = 'graph'; return ctx.render() }
     if (d.obSide) { A.side = d.obSide; A.tag = ''; return ctx.render() }
     if (d.obTag != null) { A.tag = d.obTag; A.side = 'files'; return ctx.render() }
     if (d.obFold) { A.folded.has(d.obFold) ? A.folded.delete(d.obFold) : A.folded.add(d.obFold); return ctx.render() }
@@ -410,7 +446,7 @@ export function apply(ctx) {
     if ('obSettings' in d) return ctx.go(`settings/${SECTION}`)
     if (d.obBrowse) return ctx.go(`obsidian:vaults/${d.obBrowse}`)
   })
-  ctx.listen('change', (ev) => { if (ev.target.matches && ev.target.matches('[data-ob-switch]')) { A.tag = ''; const v = ev.target.value, t = A.tabs[v]; ctx.go(`obsidian:vaults/${v}${t && t !== 'graph' ? '/' + encodeURIComponent(t) : ''}`) } })
+  ctx.listen('change', (ev) => { if (ev.target.matches && ev.target.matches('[data-ob-switch]')) { A.tag = ''; const v = ev.target.value, t = A.tabs[v]; ctx.go(`${A.base}/${v}${t && t !== 'graph' ? '/' + encodeURIComponent(t) : ''}`) } })
   ctx.listen('input', (ev) => {
     if (ev.target.id === 'ob-q') { A.q = ev.target.value; ctx.render(); const el = document.getElementById('ob-q'); if (el) { el.focus(); el.setSelectionRange(A.q.length, A.q.length) } }
     if (ev.target.id === 'ob-gfind') { A.gq = ev.target.value; const r = route(); const st = ctx.ui.graph.live && ctx.ui.graph.live.get('ob-g-full'); if (st) ctx.ui.graph.find('ob-g-full', A.gq) ; void r }
@@ -433,7 +469,10 @@ export function apply(ctx) {
       return `<div class="obs">${tabs()}${detail(v)}</div>`
     },
   })
-  ctx.settings.add({ render: () => ctx.ui.setCard('', [ctx.ui.setRow('Vaults', `${data ? data.vaults.length : '…'} connected — set them up in their own section.`, '<button class="btn" data-obs-open>Open</button>')]) })
+  ctx.settings.add({ render: () => ctx.ui.setCard('', [
+    ctx.ui.setRow('Vaults', `${data ? data.vaults.length : '…'} connected — set them up in their own section.`, '<button class="btn" data-obs-open>Open</button>'),
+    ctx.ui.setRow('Echo’s knowledge', data && data.knowledge && data.knowledge.on ? `On — ${data.knowledge.notes} notes in Echo’s own vault (the Brain activity).` : 'Off — Echo keeps no vault of its own.', data && data.knowledge ? `<button class="btn" data-ob-knowledge="${data.knowledge.on ? '0' : '1'}">${data.knowledge.on ? 'Turn off' : 'Turn on'}</button>` : ''),
+  ]) })
   ctx.palette.add({ label: 'Obsidian: vaults', keywords: 'obsidian vault notes knowledge', run: () => ctx.go(`settings/${SECTION}`) })
   ctx.palette.add({ label: 'Obsidian: connect a vault', keywords: 'obsidian vault add connect', run: () => { ctx.go(`settings/${SECTION}`); addVault() } })
 

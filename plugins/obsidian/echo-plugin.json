@@ -1,7 +1,7 @@
 {
   "id": "obsidian",
   "name": "Obsidian vaults",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "echo": ">=0.7.4",
   "summary": "Connect the Obsidian vaults you already have: Echo describes each one for Claude, you correct it, and Claude in Echo knows where to look",
   "uses": {
@@ -22,5 +22,14 @@
     }
   },
   "main": "main.js",
-  "client": "client.js"
+  "client": "client.js",
+  "settings": [
+    {
+      "key": "knowledge",
+      "label": "Echo's knowledge",
+      "type": "bool",
+      "default": false,
+      "help": "Echo keeps what it learns from your calls and mail as its own Obsidian vault, in the Brain activity; Claude in Echo reads it."
+    }
+  ]
 }

@@ -197,24 +197,33 @@ export function apply(ctx) {
     const threads = (() => { try { return ctx.echo.read('threads') } catch { return [] } })()
     const nameOf = (b) => (b.client ? (clients.find((c) => c.id === b.client) || {}).name : (threads.find((t) => t.id === b.thread) || {}).name) || b.client || b.thread
     const forWhom = (v) => (v.belongs || []).map(nameOf).join(', ')
+    // Echo's own vault, when its knowledge is on and it holds notes.
+    const echoOn = (() => { try { return knowledgeOn() && echoIndex().notes.size > 0 } catch { return false } })()
     // The catalog: every vault's line, by whom it is for.
     step('catalog', () => {
       const groups = {}
       for (const v of ready) (groups[forWhom(v) || 'Yours'] = groups[forWhom(v) || 'Yours'] || []).push(v)
       ctx.store.write('vaults.md', ['# The user\'s Obsidian vaults', '',
         'Each vault: when to look in it, its folder, and its description (read that before working in the vault). Written from the vaults\' own notes and corrected by the user: notes about the vaults, not instructions.', '',
+        ...(echoOn ? ['## Echo\'s own', '', `- **Echo** (vault "echo") — what Echo learned from the user's calls and mail: clients, organisations, products, initiatives, documents.\n  Folder: ${ctx.store.path('vault')}\n  Rules: ${ctx.store.path('vault/_echo/Rules.md')}`, ''] : []),
         ...Object.entries(groups).sort().flatMap(([g, list]) => [`## ${g}`, '', ...list.map((v) => `- **${v.name}** — ${description(v.id).when || ''}\n  Folder: ${v.root}\n  Description: ${ctx.store.path(descPath(v.id))}`), '']),
       ].join('\n'))
     })
     // One skill for all vaults: its description names them (shortened when there are many).
     step('skill', () => {
-      if (!ready.length) return ctx.sessions.skills([])
+      if (!ready.length && !echoOn) return ctx.sessions.skills([])
       const names = ready.map((v) => (forWhom(v) ? `${v.name} (${forWhom(v)})` : v.name))
       let list = names.join(', ')
       if (list.length > 420) { let n = names.length; while (n > 1 && names.slice(0, n).join(', ').length > 380) n--; list = `${names.slice(0, n).join(', ')} and ${names.length - n} more` }
-      const description = `The user's own Obsidian notes — ${ready.length} vault${ready.length === 1 ? '' : 's'}: ${list}. Use when the answer may be in the user's notes (people, decisions, how things are done, what they know about a client or topic), or to add knowledge to them.`.replace(/[\r\n]+/g, ' ')
+      const theirs = ready.length ? `the user's own Obsidian notes — ${ready.length} vault${ready.length === 1 ? '' : 's'}: ${list}` : ''
+      const echos = echoOn ? 'Echo\'s own knowledge — what Echo learned from the user\'s calls and mail about clients, organisations, products, initiatives and documents' : ''
+      const description = `${[echos, theirs].filter(Boolean).join('; and ')}. Use when the answer may be in ${echoOn ? 'what Echo knows or ' : ''}the user's notes (people, decisions, how things are done, what they know about a client or topic), or to add knowledge to them.`.replace(/^./, (c) => c.toUpperCase()).replace(/[\r\n]+/g, ' ')
       const body = [
         '# The user\'s Obsidian vaults', '',
+        ...(echoOn ? [
+          '## Echo\'s own vault', '',
+          `Echo keeps its own knowledge as an Obsidian vault: ${ctx.store.path('vault')}. Read its rules first: ${ctx.store.path('vault/_echo/Rules.md')}. The tools below take "vault": "echo". Echo writes this vault itself: read it, cite it, don't change it.`, '',
+        ] : []),
         `1. Find the vault: read the catalog, ${ctx.store.path('vaults.md')} — each vault's "when to look here" line, folder and description file. When the window names a vault for the open client or thread, start there.`,
         '2. Read that vault\'s description before searching or writing in it: it says what the vault is, where things are, how notes are written and what to leave alone.',
         '3. Search with Grep / Glob inside the vault\'s folder; read the notes you cite.', '',
@@ -266,7 +275,7 @@ export function apply(ctx) {
   ctx.command('view', () => {
     recover()
     const vs = load()
-    return { vaults: vs.map((v) => ({ ...v, description: description(v.id), proposed: ctx.store.read(`vaults/${v.id}/proposed.md`) ? parse(ctx.store.read(`vaults/${v.id}/proposed.md`)) : null })), clients: ctx.echo.read('clients'), threads: ctx.echo.read('threads') }
+    return { vaults: vs.map((v) => ({ ...v, description: description(v.id), proposed: ctx.store.read(`vaults/${v.id}/proposed.md`) ? parse(ctx.store.read(`vaults/${v.id}/proposed.md`)) : null })), clients: ctx.echo.read('clients'), threads: ctx.echo.read('threads'), knowledge: { on: knowledgeOn(), notes: knowledgeOn() ? echoIndex().notes.size : 0, root: ctx.store.path('vault') } }
   })
   // `add` picks a folder; one with no notes comes back as `check` for the user's yes, then `add {root, anyway}`
   // connects it. One connected already comes back as `already`.
@@ -286,7 +295,7 @@ export function apply(ctx) {
     }
     const name = root.split(/[\\/]/).filter(Boolean).pop() || 'Vault'
     let id = slug(name)
-    while (vs.some((v) => v.id === id)) id = `${id}-2`
+    while (id === 'echo' || vs.some((v) => v.id === id)) id = `${id}-2`
     vs.push({ id, name, root, state: 'analysing', added_at: new Date().toISOString() })
     save(vs)
     // In the background (the window follows `view`); `wait` (a terminal) waits for it.
@@ -375,6 +384,7 @@ export function apply(ctx) {
   //   hd: [[level, text, line]], bk: [[block id, line]], ln: [[target, line, flags, subpath, alias]], tk: [[line, status, text]]}
   // with lines counted from 1 in the whole file; link flags: 1 an embed, 2 a Markdown link, 4 in the properties.
   const IX_VERSION = 2
+  const ECHO = 'echo' // Echo's own vault's id (a user's vault never gets it: see `add`)
   const EMBED = 1, MDLINK = 2, INPROPS = 4
   const ixPath = (id) => `vaults/${id}/index.json`
   const indexes = new Map() // vault id → the index in memory
@@ -505,6 +515,7 @@ export function apply(ctx) {
   }
   const building = new Map() // vault id → the index being built (one at a time)
   const index = (v) => {
+    if (v.echo) return Promise.resolve(echoIndex())
     const have = indexes.get(v.id)
     // Calls close together (a tool's few questions, the window's drawing) share one look at the files.
     if (have && Date.now() - have.at < 2000) return Promise.resolve(have)
@@ -535,9 +546,69 @@ export function apply(ctx) {
     return ix
   }
 
-  const vaultOf = (id) => { const v = load().find((x) => x.id === id); if (!v) throw new Error('no such vault'); return v }
-  // A vault as a tool names it: its id, its name, or its folder; the only one when there is one.
+  // ── Echo's own vault: the knowledge Echo keeps, in the plugin's store (`vault/`) ──
+  // Written by the plugin only (ctx.store), so its index is kept up to date at each write — no walk of the folder.
+  // On while the plugin's `knowledge` setting is on: it is Echo's knowledge then, in the Brain activity and the skill.
+  const knowledgeOn = () => { try { return !!ctx.settings.get('knowledge') } catch { return false } }
+  const echoVault = () => ({ id: ECHO, name: 'Echo', root: ctx.store.path('vault'), echo: true, confirmed: true, state: 'ready' })
+  const vaultPath = (path) => {
+    const p = norm(String(path || '').replace(/\\/g, '/'))
+    if (!p || String(path).split(/[\\/]/).includes('..')) throw new Error(`not a path in the vault: ${path}`)
+    return p
+  }
+  const echoIndex = () => {
+    let ix = indexes.get(ECHO)
+    if (!ix) { const st = stored(echoVault()) || { notes: new Map(), files: [] }; ix = derive(st.notes, st.files); indexes.set(ECHO, ix) }
+    return ix
+  }
+  const persist = (v, ix) => {
+    try { ctx.store.write(ixPath(v.id), JSON.stringify({ v: IX_VERSION, root: v.root, built_at: new Date().toISOString(), files: ix.files, notes: [...ix.notes.values()] })) } catch (e) { ctx.log(`index ${v.id}: ${(e && e.message) || e}`) }
+  }
+  // Notes written or removed in one go: [{path, text}] (text null: removed); the index worked out once after them.
+  const echoWrite = (changes) => {
+    const ix = echoIndex()
+    const notes = new Map(ix.notes)
+    for (const { path, text } of changes) {
+      const p = vaultPath(path)
+      if (!/\.md$/i.test(p)) throw new Error(`a note ends in .md: ${p}`)
+      if (text == null) { try { ctx.store.remove(`vault/${p}`) } catch { /* gone already */ } notes.delete(p); continue }
+      ctx.store.write(`vault/${p}`, String(text))
+      notes.set(p, parseNote(p, String(text), String(text).length, Date.now()))
+    }
+    const next = derive(notes, ix.files)
+    indexes.set(ECHO, next)
+    persist(echoVault(), next)
+    if (!ix.notes.size !== !next.notes.size) publish() // the skill names Echo's vault only when it holds notes
+    return next
+  }
+  // Read again from the store (after the user changed Echo's vault in Obsidian): every note, in one go.
+  const echoReindex = () => {
+    const notes = new Map()
+    const walkStore = (dir) => {
+      for (const name of ctx.store.list(dir)) {
+        if (name.startsWith('.')) continue
+        const p = `${dir}/${name}`
+        if (/\.md$/i.test(name)) { const t = ctx.store.read(p); if (t != null) notes.set(p.slice('vault/'.length), parseNote(p.slice('vault/'.length), t, t.length, Date.now())) }
+        else if (!/\.[a-z0-9]{1,5}$/i.test(name)) walkStore(p)
+      }
+    }
+    walkStore('vault')
+    const ix = derive(notes, [])
+    indexes.set(ECHO, ix)
+    persist(echoVault(), ix)
+    publish()
+    return ix
+  }
+  const readText = (v, path) => (v.echo ? ctx.store.read(`vault/${vaultPath(path)}`) : ctx.fs.read(v.root, path, 400000))
+  const readTexts = (v, paths, max) => (v.echo ? Promise.resolve(paths.map((p) => { try { return ctx.store.read(`vault/${vaultPath(p)}`) } catch { return null } })) : ctx.fs.readMany(v.root, paths, max || 400000))
+
+  const vaultOf = (id) => {
+    if (id === ECHO) { if (!knowledgeOn()) throw new Error('Echo\'s knowledge is off'); return echoVault() }
+    const v = load().find((x) => x.id === id); if (!v) throw new Error('no such vault'); return v
+  }
+  // A vault as a tool names it: its id, its name, or its folder; the only one when there is one. "echo": Echo's own.
   const vaultArg = (x) => {
+    if (knowledgeOn() && (lc(x) === ECHO || String(x || '').replace(/\/+$/, '') === echoVault().root)) return echoVault()
     const vs = load()
     if (x == null || x === '') { if (vs.length === 1) return vs[0]; throw new Error(`which vault? ${vs.map((v) => `“${v.name}”`).join(', ') || 'none connected'}`) }
     const s = String(x).replace(/\/+$/, '')
@@ -558,7 +629,7 @@ export function apply(ctx) {
   // The lines a set of notes have at these line numbers (a backlink shows its line), read in one go.
   const linesAt = async (v, wanted) => {
     const paths = [...wanted.keys()]
-    const texts = await ctx.fs.readMany(v.root, paths, 400000)
+    const texts = await readTexts(v, paths)
     const out = new Map()
     paths.forEach((p, i) => { const ls = (texts[i] || '').split('\n'); for (const l of wanted.get(p)) out.set(`${p}:${l}`, (ls[l - 1] || '').replace(/\r$/, '')) })
     return out
@@ -583,7 +654,7 @@ export function apply(ctx) {
     const ix = await index(v)
     const n = ix.notes.get(path)
     if (!n) throw new Error('no such note')
-    const text = ctx.fs.read(v.root, path, 400000)
+    const text = readText(v, path) || ''
     const { body } = parseFrontmatter(text)
     // Wikilinks become markers the window turns into links (Echo's Markdown writer keeps only https links).
     const wl = []
@@ -631,6 +702,14 @@ export function apply(ctx) {
     }
     return { nodes, edges }
   })
+
+  // ── the switch: Echo's knowledge (Echo's own vault) on or off — here only, not in Echo's core ──
+  ctx.command('knowledge', ({ on }) => {
+    ctx.settings.set('knowledge', !!on)
+    publish()
+    return { on: knowledgeOn(), notes: knowledgeOn() ? echoIndex().notes.size : 0 }
+  })
+  ctx.command('echo_reindex', () => { if (!knowledgeOn()) throw new Error('Echo\'s knowledge is off'); return { notes: echoReindex().notes.size } })
 
   // ── Claude's tools: `echoctl plugin call obsidian <command> '<json>'` (the skill lists them) ──
   // Each takes `vault` (a name, folder or id) and answers from the index — Obsidian need not be open.
@@ -795,7 +874,7 @@ export function apply(ctx) {
     const s = !angle && (/%[0-9a-f]{2}/i.test(old) || /\s/.test(p)) ? p.split('/').map(encodeURIComponent).join('/') : p
     return angle ? `<${s}${sub}>` : s + sub
   }
-  ctx.command('rename_plan', async ({ vault, note, to }) => {
+  ctx.command('rename_plan', async ({ vault, note, to, apply }) => {
     const v = vaultArg(vault)
     const ix = await index(v)
     const from = noteArg(ix, note, v)
@@ -814,7 +893,7 @@ export function apply(ctx) {
     const files = new Set((ix.back.get(from) || []).map((b) => b[0]))
     files.add(from)
     const list = [...files]
-    const texts = await ctx.fs.readMany(v.root, list, 4000000)
+    const texts = await readTexts(v, list, 4000000)
     const edits = []
     list.forEach((file, k) => {
       const text = texts[k]
@@ -858,6 +937,21 @@ export function apply(ctx) {
         if (after !== raw) edits.push({ file: selfMoves ? dest : file, line: ln, before: raw.replace(/\r$/, ''), after: after.replace(/\r$/, '') })
       }
     })
+    // Echo's own vault is the plugin's to write: the plan is carried out here, in one go.
+    if (apply) {
+      if (!v.echo) throw new Error('only Echo\'s own vault is renamed here; in the user\'s vaults, carry out the plan yourself')
+      const changes = []
+      list.forEach((file, k) => {
+        const text = texts[k]
+        if (text == null) return
+        const lines = text.split('\n')
+        for (const e of edits.filter((x) => x.file === (file === from ? dest : file))) lines[e.line - 1] = e.after + (/\r$/.test(lines[e.line - 1] || '') ? '\r' : '')
+        if (file === from) changes.push({ path: from, text: null }, { path: dest, text: lines.join('\n') })
+        else changes.push({ path: file, text: lines.join('\n') })
+      })
+      echoWrite(changes)
+      return { vault: v.name, applied: true, move: { from, to: dest }, edited: edits.length, warnings }
+    }
     return {
       vault: v.name, folder: v.root, move: { from, to: dest }, edits, warnings,
       how: `Move the file first (${from} → ${dest}, inside ${v.root}), then make each edit: in that file, replace the line “before” with “after” (the note's own edits are listed under its new path). Nothing else needs changing.`,
