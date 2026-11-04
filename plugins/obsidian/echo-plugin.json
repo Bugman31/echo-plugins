@@ -1,7 +1,7 @@
 {
   "id": "obsidian",
   "name": "Obsidian vaults",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "echo": ">=0.7.4",
   "summary": "Connect the Obsidian vaults you already have: Echo describes each one for Claude, you correct it, and Claude in Echo knows where to look",
   "uses": {

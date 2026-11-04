@@ -191,7 +191,7 @@ export function apply(ctx) {
     const add = options ? `<select data-obs-belong aria-label="For a client or thread"><option value="">${chips ? '+' : '+ for a client or thread'}</option>${options}</select>` : ''
     const meta = [`<span>${esc(kind)}</span>`, chips ? `<span class="sep">·</span><span>for</span>${chips}${add}` : add ? `<span class="sep">·</span>${add}` : '', v.notes != null ? `<span class="sep">·</span><span>${Number(v.notes).toLocaleString()} notes</span>` : '', v.latest ? `<span class="sep">·</span><span>${ago(v.latest)}</span>` : '', v.git ? '<span class="sep">·</span><span>kept in git</span>' : '',
       v.is_vault === false ? '<span class="sep">·</span><span title="No .obsidian folder: Echo keeps its links and tags itself; open it in Obsidian with “Open folder as vault” any time">a folder of notes</span>'
-        : data.cli ? '<span class="sep">·</span><span title="Claude uses Obsidian’s CLI (search, backlinks, link-safe moves) while Obsidian is open, and the files otherwise">Obsidian CLI while Obsidian is open</span>' : ''].join('')
+        : ''].join('')
     const openUrl = `obsidian://open?path=${encodeURIComponent(v.root)}`
     const head = `<div class="obs-head"><span class="obs-icon">${GEM(22)}</span>
       <div style="flex:1;min-width:0"><div class="obs-name" title="${esc(v.root)}">${esc(v.name)}</div><div class="obs-meta">${meta}</div></div>

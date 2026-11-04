@@ -13,8 +13,11 @@ then on Claude in Echo knows where to look.
 - **Any folder of Markdown notes is a vault** — Obsidian need not know it. An empty folder is asked about before it is
   connected, and gets no
   made-up description — you write it, or Echo reads it again once it has notes.
-- **Obsidian isn't needed.** Claude works with the vault's files. When Obsidian's CLI is installed and Obsidian is
-  open, Claude uses it too — search on Obsidian's index, backlinks, and moves and renames that keep links intact.
+- **Echo indexes each vault as Obsidian does** — links and where they lead, backlinks, tags, properties, aliases,
+  headings, block ids, tasks — whether or not Obsidian is open, kept in the plugin's own folder (never in the vault).
+  Claude asks it through the plugin's commands (`echoctl plugin call obsidian search | info | backlinks | links |
+  resolve | tags | where | tasks | unresolved | rename_plan`); `rename_plan` gives every line to change so a renamed or
+  moved note keeps its links.
 - Your vault isn't changed by Echo itself. Removing a vault from Echo takes all of this back.
 
 Needs Echo 0.7.2 or later. Part of the [Echo plugins](../../README.md) marketplace.
