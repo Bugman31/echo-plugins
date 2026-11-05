@@ -184,12 +184,26 @@ export function apply(ctx) {
   const setting = (key, d) => { try { const v = ctx.settings.get(key); return v == null || v === '' ? d : v } catch { return d } }
 
   const getNote = (id) => (validId(id) ? readJson(`notes/${id}.json`, null) : null)
-  const putNote = (n) => { if (!validId(n.id)) throw new Error(`bad page id “${n.id}”`); writeJson(`notes/${n.id}.json`, n) }
+  let indexDirty = true
+  const putNote = (n) => { if (!validId(n.id)) throw new Error(`bad page id “${n.id}”`); writeJson(`notes/${n.id}.json`, n); indexDirty = true }
   const mustNote = (id) => { const n = getNote(id); if (!n) throw new Error('that page is gone'); return { ...n, id } }
   const allNotes = () => ctx.store.list('notes').filter((f) => f.endsWith('.json')).map((f) => {
     const n = readJson(`notes/${f}`, null)
     return n ? { ...n, id: f.slice(0, -5) } : null
   }).filter(Boolean)
+  // index.md: one line a page, newest first, for readers that can open a file but not search a folder (a Claude
+  // run with only Read, such as Meeting Prep's): `<id> | date | title | type › group | attendees | open actions`.
+  const writeIndex = () => {
+    const lines = allNotes().sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((n) => {
+      const open = (n.actions || []).filter((a) => !a.done).length
+      const one = (s) => String(s || '').replace(/[|\n\r]+/g, ' ').trim()
+      return `${n.id} | ${n.date || ''} | ${one(n.title).slice(0, 100)} | ${one(n.type)} › ${one(n.group)} | ${(n.attendees || []).slice(0, 10).map(one).join(', ')} | ${open} open`
+    })
+    ctx.store.write('index.md', `# Meeting Notebook index\n\nOne line a page, newest first. Each page is notes/<id>.json beside this file.\nid | date | title | type › group | attendees | open actions\n\n${lines.join('\n')}\n`)
+    indexDirty = false
+  }
+  ctx.every(30, () => { if (indexDirty) writeIndex() })
+  try { writeIndex() } catch (e) { ctx.log('index', (e && e.message) || e) }
   const filed = () => readJson('filed.json', {})
   const setFiled = (call, rec) => { const f = filed(); if (rec) f[call] = rec; else delete f[call]; writeJson('filed.json', f) }
 
@@ -437,6 +451,7 @@ export function apply(ctx) {
     const n = getNote(id)
     if (!n) return true
     ctx.store.remove(`notes/${id}.json`)
+    indexDirty = true
     // A deleted page of a call stays deleted: the next minutes don't bring it back.
     if (n.call) setFiled(n.call, { id: '', state: 'removed', at: new Date().toISOString(), error: '' })
     return true
