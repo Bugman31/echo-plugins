@@ -31,11 +31,24 @@ const CSS = `
 .ob-fx.sk { color: var(--text-3); }
 .ob-fx .n { margin-left: auto; font-size: 11px; color: var(--text-3); font-weight: 400; }
 .ob-mid { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.ob-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); padding: 0 10px; overflow-x: auto; flex: none; }
-.ob-tab { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 0; background: none; color: var(--text-2); font: inherit; font-size: 12px; border-radius: 6px 6px 0 0; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
-.ob-tab.on { background: var(--surface-2, var(--bg)); color: var(--text); box-shadow: inset 0 2px 0 var(--accent); }
-.ob-tab .x { opacity: 0.6; }
-.ob-body { overflow: auto; padding: 8px 32px 24px; flex: 1; min-height: 0; }
+/* the note tabs: on the page's own colour, edge to edge in height; the open one lifted a shade, a grey line on top */
+.ob-tabs { display: flex; align-items: stretch; height: 36px; padding: 0 4px; background: var(--surface); border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; flex: none; scrollbar-width: none; }
+.ob-tabs::-webkit-scrollbar { display: none; }
+.ob-tab { position: relative; display: flex; align-items: center; gap: 4px; padding: 0 6px 0 12px; border: 0; background: none; color: var(--text-3); font: inherit; font-size: 12.5px; white-space: nowrap; min-width: 0; max-width: 200px; flex: 0 1 auto; }
+.ob-tab .t { overflow: hidden; text-overflow: ellipsis; }
+.ob-tab + .ob-tab::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 1px; background: var(--line-strong); }
+.ob-tab:hover { color: var(--text-2); background: var(--line); }
+.ob-tab:hover::before, .ob-tab:hover + .ob-tab::before, .ob-tab.on::before, .ob-tab.on + .ob-tab::before { display: none; }
+.ob-tab.on { background: var(--line); color: var(--text); font-weight: 600; box-shadow: inset 0 2px 0 var(--text-3); }
+.ob-tab .x { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 4px; font-size: 14px; line-height: 1; opacity: 0; flex: none; }
+.ob-tab:hover .x, .ob-tab.on .x { opacity: 0.55; }
+.ob-tab .x:hover { opacity: 1; background: var(--line-strong); }
+.ob-tab.g { margin-left: auto; padding: 0 12px; gap: 6px; flex: none; }
+.ob-tab.g::before { display: none; }
+.ob-body { overflow: auto; padding: 4px 28px 28px; flex: 1; min-height: 0; }
+/* inside Echo's Knowledge section: the browser fills the pane edge to edge (its own panes have their padding) */
+.br-pane:has(> .ob) { padding: 0; gap: 0; overflow: hidden; }
+.br-pane > .ob { flex: 1; height: auto; min-height: 0; }
 .ob-path { font-size: 11.5px; color: var(--text-3); padding-top: 8px; }
 .ob-h1 { font-size: 24px; font-weight: 700; margin: 10px 0 8px; }
 .ob-props { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 12px; font-size: 12.5px; padding: 8px 0 12px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
@@ -450,7 +463,7 @@ export function apply(ctx) {
           <input class="search" id="ob-q" placeholder="Search notes" value="${esc(A.q)}" aria-label="Search notes">
           <span class="ob-seg"><button class="${A.side === 'files' ? 'on' : ''}" data-ob-side="files">Files</button><button class="${A.side === 'tags' ? 'on' : ''}" data-ob-side="tags">Tags</button></span></div>
         <div class="ob-tree">${A.side === 'tags' && !A.tag ? b.tags.map((t) => `<button class="ob-fx" data-ob-tag="${esc(t.tag)}">#${esc(t.tag)}<span class="n">${t.n}</span></button>`).join('') || '<p class="set-sub" style="padding:8px">No tags.</p>' : treeHtml(b, v.id, cur)}</div></aside>`
-      const tabs = `<div class="ob-tabs">${open.map((p) => { const nn = A.notes[`${v.id}|${p}`]; return `<button class="ob-tab${p === cur ? ' on' : ''}" data-ob-open="${esc(p)}" data-ob-vault="${esc(v.id)}" title="${esc(p)}">${esc(nn ? nn.title : p.split('/').pop().replace(/\.md$/, ''))} <span class="x" data-ob-close="${esc(p)}">×</span></button>` }).join('')}<button class="ob-tab${cur === 'graph' ? ' on' : ''}" data-ob-graph>Graph</button></div>`
+      const tabs = `<div class="ob-tabs">${open.map((p) => { const nn = A.notes[`${v.id}|${p}`]; return `<button class="ob-tab${p === cur ? ' on' : ''}" data-ob-open="${esc(p)}" data-ob-vault="${esc(v.id)}" title="${esc(p)}"><span class="t">${esc(nn ? nn.title : p.split('/').pop().replace(/\.md$/, ''))}</span><span class="x" data-ob-close="${esc(p)}" title="Close">×</span></button>` }).join('')}<button class="ob-tab g${cur === 'graph' ? ' on' : ''}" data-ob-graph><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="5" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M7.3 11 16.7 6M7.3 13l9.4 5"/></svg>Graph</button></div>`
       const body = cur === 'graph' ? failed(`g:${v.id}|${A.gmode}`) + graphHtml(v.id) : `<div class="ob-body">${n ? noteHtml(n, v.id, v.root) : cur ? failed(`n:${v.id}|${cur}`) || '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' : '<p class="set-sub" style="padding-top:24px">Pick a note on the left, or open the Graph.</p>'}</div>`
       return `<div class="ob">${side}<section class="ob-mid">${tabs}${body}</section><aside class="ob-right">${rightHtml(n, v.id)}</aside></div>`
   }

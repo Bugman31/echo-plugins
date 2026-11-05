@@ -737,7 +737,8 @@ of Echo's is copied here.
 - **Names** go through the dictionary (aliases) first; a new note only when two sources say it.
 - **Work** (a thread's tasks, decisions and questions) is Echo's: a note points at it with \`echo://task/<thread>/<item>\`,
   never copies it.
-- **Time**: a newer observation that contradicts an older one doesn't erase it; the older one moves to History.
+- **Time**: a newer observation that contradicts an older one doesn't erase it; the older one moves to History, and
+  comes back if the newer one's source is removed.
 - **index.md** lists every note in one line; **log.md** records each source read.
 - Echo writes a note's summary, Observations, Relations and History; anything else in a note is yours and stays.
   An observation you delete isn't put back.
@@ -904,10 +905,11 @@ of Echo's is copied here.
       if (isThing && x.aliases.length !== had) taught.add(key)
       if (!x.summary && e.summary) x.summary = String(e.summary).trim().slice(0, 400)
       for (const t of src.threads || []) if (!(x.threads || []).some(([id]) => id === t.id)) (x.threads = x.threads || []).push([t.id, t.name])
-      // Out of date: moved to History (a quote of this note's, said by the model).
+      // Out of date: moved to History (a quote of this note's, said by the model), remembering which source replaced it
+      // — if that source goes, the fact comes back.
       for (const q of e.supersedes || []) {
         const i = x.obs.findIndex((o) => kn(o.quote) === kn(q))
-        if (i >= 0) { (x.history = x.history || []).unshift(x.obs[i]); x.obs.splice(i, 1); touched.add(key) }
+        if (i >= 0) { (x.history = x.history || []).unshift({ ...x.obs[i], by: src.id }); x.obs.splice(i, 1); touched.add(key) }
       }
       for (const o of e.observations || []) {
         const q = kn(o && o.quote)
@@ -932,15 +934,21 @@ of Echo's is copied here.
     }
     return { kept, dropped, touched: [...touched].filter((n) => things[n]) }
   }
-  // A source's observations taken out (it changed, or is gone): everywhere, candidates too.
+  // A source's observations taken out (it changed, or is gone): everywhere, candidates too. What it had replaced comes
+  // back from History (a changed source, read again, may replace it again).
   const dropSource = (id, st) => {
     const touched = []
     for (const [name, x] of [...Object.entries(st.things), ...Object.entries(st.pending)]) {
       const n = x.obs.length + (x.history || []).length
-      x.obs = x.obs.filter((o) => o.src !== id); x.history = (x.history || []).filter((o) => o.src !== id)
+      const back = (x.history || []).filter((o) => o.by === id && o.src !== id).map(({ by, ...o }) => o)
+      x.obs = x.obs.filter((o) => o.src !== id); x.history = (x.history || []).filter((o) => o.src !== id && o.by !== id)
+      if (back.length) {
+        x.obs = [...x.obs, ...back].sort((a, b) => String(b.date).localeCompare(String(a.date)))
+        if (x.obs.length > K_MAX) x.history = [...x.obs.splice(K_MAX), ...x.history]
+      }
       x.rels = (x.rels || []).filter((r) => r[2] !== id)
       if (x.sources) x.sources = x.sources.filter((s) => s !== id)
-      if (n !== x.obs.length + x.history.length && st.things[name]) touched.push(name)
+      if ((n !== x.obs.length + x.history.length || back.length) && st.things[name]) touched.push(name)
     }
     return touched
   }
