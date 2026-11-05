@@ -9,7 +9,7 @@
 //   profile:                   # an AI profile id (empty: the default)
 //   model:                     # empty: the profile's minutes model
 //   tools: read                # read · folder · skip — the user's pick, the prompt being theirs
-//   deliver: telegram, mail    # teams · mail · a way a plugin adds (telegram…)
+//   deliver: telegram, mail    # teams · mail · telegram (the ways its manifest asks for)
 //   mail_to:                   # mail only: other addresses (empty: the user)
 //   skip_empty: true           # nothing worth sending → nothing sent
 //   enabled: true
@@ -22,7 +22,9 @@
 
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const validKind = (k) => /^[a-z0-9-]{1,24}$/.test(k)
+// The ways it may send: those its manifest asks for (\`uses.deliver.to\`) — Echo refuses any other.
+const DELIVER_TO = ['teams', 'mail', 'telegram']
+const validKind = (k) => DELIVER_TO.includes(k)
 const NOTHING = 'NOTHING'
 const KEEP_RUNS = 20
 
@@ -137,7 +139,7 @@ function check(r) {
   parseSchedule(r.schedule)
   if (!['read', 'folder', 'skip'].includes(r.tools)) throw new Error(`tools “${r.tools}”: read, folder or skip`)
   const bad = r.deliver.find((d) => !validKind(d))
-  if (bad) throw new Error(`deliver “${bad}” isn't a way to send (teams, mail, or one a plugin adds)`)
+  if (bad) throw new Error(`deliver “${bad}” isn't a way it sends (${DELIVER_TO.join(', ')})`)
   const addr = r.mail_to.find((a) => !validAddress(a))
   if (addr) throw new Error(`“${addr}” isn't a mail address`)
   if (r.mail_to.length > 20) throw new Error('mail_to: at most 20 addresses')
@@ -323,7 +325,7 @@ export function apply(ctx) {
       }),
       templates: templates(),
       profiles: ctx.profiles(),
-      deliver: ctx.deliver.status(),
+      deliver: (() => { const d = ctx.deliver.status() || {}; return { ...d, provided: (d.provided || []).filter((p) => DELIVER_TO.includes(p.kind)) } })(),
     }
   })
   /** The routines the plugin ships as starting points (`templates/*.md` in its package). */
