@@ -213,16 +213,33 @@ export function apply(ctx) {
     while (runs.length > KEEP_RUNS) ctx.store.remove(`runs/${runs.shift()}`)
   }
 
+  /** A call folder as Echo has it now. Echo renames a call's folder when its minutes give it a title
+   *  (`2026-11-05_130106` → `2026-11-05_130106-sdr-campaigns`), so a name from an event or an old record
+   *  is found again by its timestamp. {call, source}, or null. */
+  const findCall = (call) => {
+    try { const s = ctx.echo.read('source', `call:${call}`); if (s) return { call, source: s } } catch { /* renamed, or gone */ }
+    const stampOf = /^\d{4}-\d{2}-\d{2}_\d{6}/.exec(call)
+    if (!stampOf) return null
+    let list = []
+    try { list = ctx.echo.read('sources', { limit: 200 }) || [] } catch { list = [] }
+    const hit = list.map((s) => callName(s && s.id)).find((name) => name && name !== call && name.slice(0, stampOf[0].length) === stampOf[0])
+    if (!hit) return null
+    try { const s = ctx.echo.read('source', `call:${hit}`); return s ? { call: hit, source: s } : null } catch { return null }
+  }
+
   /** File one Echo call as a page (a Claude run, a few minutes); the page's id. */
-  const file = async (call) => {
-    if (!validCall(call)) throw new Error(`no call “${call}”`)
+  const file = async (asked) => {
+    if (!validCall(asked)) throw new Error(`no call “${asked}”`)
+    const found = findCall(asked)
+    if (!found) throw new Error(`Echo has no call “${asked}” any more`)
+    const { call, source } = found
     if (filing.has(call)) throw new Error('this call is being filed already')
     filing.add(call)
+    // A record kept under the folder's old name moves to its new one.
+    if (call !== asked && filed()[asked]) { const f = filed(); if (!f[call] && f[asked].id) f[call] = f[asked]; delete f[asked]; writeJson('filed.json', f) }
     const before = filed()[call]
     setFiled(call, { ...(before || {}), state: 'filing', at: new Date().toISOString(), error: '' })
     try {
-      const source = ctx.echo.read('source', `call:${call}`)
-      if (!source) throw new Error('Echo has no such call')
       const prompt = filingPrompt({ call, source, me: setting('me', ''), folders: folders() })
       const out = await ctx.claude.run({ title: `Notebook: ${str(source.title) || call}`, prompt, tools: 'read', dir: `runs/${stamp()}` })
       prune()
@@ -258,13 +275,50 @@ export function apply(ctx) {
   }
 
   // Echo wrote (or rewrote) a call's minutes: file it, unless the user deleted its page or switched this off.
+  // The event can name the folder just before Echo renames it: such a call waits (`waiting.json`) and is
+  // looked for again every 30 s for 15 minutes, with no error shown meanwhile.
+  const WAIT_MS = 15 * 60000
+  const fileAuto = (call) => {
+    const found = findCall(call)
+    if (!found) {
+      const w = readJson('waiting.json', {})
+      if (!w[call]) { w[call] = new Date().toISOString(); writeJson('waiting.json', w) }
+      return
+    }
+    const rec = filed()[found.call]
+    if (rec && rec.state === 'removed') return
+    file(found.call).catch((e) => ctx.log('file', found.call, (e && e.message) || e))
+  }
   ctx.on('minutes_written', ({ id }) => {
     const call = callName(id)
     if (!validCall(call) || setting('auto', true) === false) return
-    const rec = filed()[call]
-    if (rec && rec.state === 'removed') return
-    file(call).catch((e) => ctx.log('file', call, (e && e.message) || e))
+    fileAuto(call)
   })
+  ctx.every(30, () => {
+    const w = readJson('waiting.json', {})
+    const names = Object.keys(w)
+    if (!names.length) return
+    for (const call of names) {
+      const late = Date.now() - new Date(w[call]).getTime() > WAIT_MS
+      if (findCall(call) || late) {
+        delete w[call]
+        if (!late) fileAuto(call)
+      }
+    }
+    writeJson('waiting.json', w)
+  })
+  // Records of a folder's old name, left from before renamed calls were followed: the call is filed under its
+  // new name, so the old record (and its error) goes.
+  {
+    const f = filed()
+    let tidy = false
+    for (const [name, rec] of Object.entries(f)) {
+      if (rec.state !== 'failed') continue
+      const stampOf = /^\d{4}-\d{2}-\d{2}_\d{6}/.exec(name)
+      if (stampOf && Object.keys(f).some((other) => other !== name && other.startsWith(stampOf[0]) && f[other].state === 'done')) { delete f[name]; tidy = true }
+    }
+    if (tidy) writeJson('filed.json', f)
+  }
 
   /** Echo's recent calls and memos, each with what the notebook has of it. */
   const recentCalls = () => {
