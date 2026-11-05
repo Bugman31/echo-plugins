@@ -31,15 +31,15 @@ const CSS = `
 .ob-fx.sk { color: var(--text-3); }
 .ob-fx .n { margin-left: auto; font-size: 11px; color: var(--text-3); font-weight: 400; }
 .ob-mid { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-/* the note tabs: on the page's own colour, edge to edge in height; the open one lifted a shade, a grey line on top */
-.ob-tabs { display: flex; align-items: stretch; height: 36px; padding: 0 4px; background: var(--surface); border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; flex: none; scrollbar-width: none; }
+/* the note tabs: on the page's own colour, edge to edge in height; a thin line above the strip; the open one lifted a shade */
+.ob-tabs { display: flex; align-items: stretch; height: 36px; padding: 0 4px; background: var(--surface); border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; flex: none; scrollbar-width: none; }
 .ob-tabs::-webkit-scrollbar { display: none; }
 .ob-tab { position: relative; display: flex; align-items: center; gap: 4px; padding: 0 6px 0 12px; border: 0; background: none; color: var(--text-3); font: inherit; font-size: 12.5px; white-space: nowrap; min-width: 0; max-width: 200px; flex: 0 1 auto; }
 .ob-tab .t { overflow: hidden; text-overflow: ellipsis; }
 .ob-tab + .ob-tab::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 1px; background: var(--line-strong); }
 .ob-tab:hover { color: var(--text-2); background: var(--line); }
 .ob-tab:hover::before, .ob-tab:hover + .ob-tab::before, .ob-tab.on::before, .ob-tab.on + .ob-tab::before { display: none; }
-.ob-tab.on { background: var(--line); color: var(--text); font-weight: 600; box-shadow: inset 0 2px 0 var(--text-3); }
+.ob-tab.on { background: var(--line); color: var(--text); font-weight: 600; }
 .ob-tab .x { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 4px; font-size: 14px; line-height: 1; opacity: 0; flex: none; }
 .ob-tab:hover .x, .ob-tab.on .x { opacity: 0.55; }
 .ob-tab .x:hover { opacity: 1; background: var(--line-strong); }
