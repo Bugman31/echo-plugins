@@ -1,7 +1,7 @@
 {
   "id": "meeting-notebook",
   "name": "Meeting Notebook",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "echo": ">=0.8.0",
   "summary": "Your calls as a notebook: filed by type, then client or person, then date, with editable minutes, decisions, your notes and action items Claude can do or you do by hand",
   "uses": {

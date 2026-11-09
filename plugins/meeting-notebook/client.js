@@ -51,7 +51,7 @@ const CSS = `
 .mnb .nb-tab{display:flex;align-items:center;gap:10px;padding:8px 10px;border:0;background:none;border-radius:6px;text-align:left;width:100%}
 .mnb .nb-tab:hover{background:var(--hover)}
 .mnb .nb-tab.on{background:var(--sheet);box-shadow:0 0 0 1px var(--rule)}
-.mnb .nb-tab .sw{width:4px;height:18px;border-radius:2px;background:var(--c,var(--t-other));flex:none}
+.mnb .nb-tab .nb-sw{width:4px;height:18px;border-radius:2px;background:var(--c,var(--t-other));flex:none}
 .mnb .nb-tab .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mnb .nb-tab .ct{font-family:var(--f-mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 .mnb .nb-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:14px 10px 6px}
@@ -82,7 +82,7 @@ const CSS = `
 .mnb .nb-sheet{max-width:clamp(760px,72vw,1500px);margin:0 auto;padding-block:28px 64px;padding-inline:clamp(16px,4vw,44px)}
 .mnb .nb-crumbs{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;color:var(--muted);margin-bottom:10px}
 .mnb .nb-chip{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:999px;background:var(--hover);font-size:12px}
-.mnb .nb-chip .sw{width:7px;height:7px;border-radius:50%;background:var(--c,var(--t-other))}
+.mnb .nb-chip .nb-sw{width:7px;height:7px;border-radius:50%;background:var(--c,var(--t-other))}
 .mnb .nb-ttl{width:100%;border:0;background:none;font-family:var(--f-body);font-size:28px;font-weight:600;line-height:1.2;padding:0;letter-spacing:-.01em}
 .mnb .nb-ttl:focus{outline:none;box-shadow:0 2px 0 var(--accent)}
 .mnb .nb-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:16px 0 6px}
@@ -207,9 +207,9 @@ const CSS = `
 .mnb .nb-cb-btn:hover{background:var(--hover);color:var(--ink)}
 .mnb .nb-cb-list{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:var(--sheet);border:1px solid var(--rule);border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,.14);max-height:260px;overflow:auto;padding:4px;min-width:200px}
 .mnb .nb-cb-opt{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;text-align:left;padding:7px 9px;border-radius:5px;font-size:13px;color:var(--ink)}
-.mnb .nb-cb-opt .sw{width:8px;height:8px;border-radius:50%;background:var(--c,var(--t-other));flex:none}
+.mnb .nb-cb-opt .nb-sw{width:8px;height:8px;border-radius:50%;background:var(--c,var(--t-other));flex:none}
 .mnb .nb-cb-opt .hint{margin-left:auto;font-size:11px;color:var(--muted)}
-.mnb .nb-cb-opt.act,.mnb .nb-cb-opt:hover{background:var(--accent-soft)}
+.mnb .nb-cb-opt.nb-hi,.mnb .nb-cb-opt:hover{background:var(--accent-soft)}
 .mnb .nb-cb-opt.new{color:var(--accent)}
 .mnb .nb-cb-head{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:8px 9px 3px}
 .mnb .nb-cb-empty{padding:8px 9px;font-size:12px;color:var(--muted)}
@@ -289,7 +289,7 @@ const CSS = `
 .mnb .nb-pg.on{background:var(--accent-soft);box-shadow:inset 2px 0 0 var(--accent)}
 .mnb .nb-ttl,.mnb .nb-gtitle{font-family:var(--f-ui);font-weight:300;font-size:36px;line-height:1.15;letter-spacing:.01em}
 .mnb .nb-chip{background:none;border:1px solid var(--c,var(--t-other));color:var(--c,var(--t-other));font-weight:500}
-.mnb .nb-chip .sw{display:none}
+.mnb .nb-chip .nb-sw{display:none}
 .mnb .nb-field input{background:var(--sheet);border-radius:5px}
 .mnb .nb-rte,.mnb .nb-row textarea,.mnb .nb-act .tx,.mnb .nb-ai .tx,.mnb .nb-dlist{font-family:var(--f-ui);font-weight:300}
 .mnb .nb-rte b,.mnb .nb-rte strong{font-weight:700}
@@ -388,12 +388,12 @@ const SKELETON = `<div class="nb-app" data-view="tabs">
     <button class="nb-ptog" id="nb-tog-tabs" aria-label="Collapse folders" title="Collapse folders">«</button>
     <div class="nb-brand">Meeting Notebook</div>
     <input class="nb-search" id="nb-q" type="search" placeholder="Search notes" aria-label="Search notes">
-    <button class="nb-tab" id="nb-tab-today" data-nb-k="__today" style="margin-bottom:8px"><span class="sw" style="--c:var(--band-accent)"></span><span class="nm">Today</span><span class="ct" id="nb-today-ct"></span></button>
+    <button class="nb-tab" id="nb-tab-today" data-nb-k="__today" style="margin-bottom:8px"><span class="nb-sw" style="--c:var(--band-accent)"></span><span class="nm">Today</span><span class="ct" id="nb-today-ct"></span></button>
     <div class="nb-lbl" style="padding-top:2px">Folders</div>
     <div id="nb-tabs"></div>
     <div class="nb-lbl">Views</div>
-    <button class="nb-tab" id="nb-tab-actions" data-nb-k="__actions"><span class="sw" style="--c:var(--ok)"></span><span class="nm">Open action items</span><span class="ct" id="nb-act-ct"></span></button>
-    <button class="nb-tab" id="nb-tab-recent" data-nb-k="__recent"><span class="sw" style="--c:var(--accent)"></span><span class="nm">Last 14 days</span><span class="ct" id="nb-rec-ct"></span></button>
+    <button class="nb-tab" id="nb-tab-actions" data-nb-k="__actions"><span class="nb-sw" style="--c:var(--ok)"></span><span class="nm">Open action items</span><span class="ct" id="nb-act-ct"></span></button>
+    <button class="nb-tab" id="nb-tab-recent" data-nb-k="__recent"><span class="nb-sw" style="--c:var(--accent)"></span><span class="nm">Last 14 days</span><span class="ct" id="nb-rec-ct"></span></button>
     <button class="nb-newbtn" id="nb-new">+ New page</button>
     <button class="nb-newbtn alt" id="nb-imp" style="margin-top:8px">File an Echo call</button>
   </nav>
@@ -629,7 +629,7 @@ export function apply(ctx) {
     $('#nb-tabs').innerHTML = ts.map((t, i) => {
       const c = ns.filter((n) => n.type === t).length, total = allNotes().filter((n) => n.type === t).length, key = 'type|' + t
       if (renaming === key) return `<input class="nb-rn" data-nb-rn="${esc(key)}" value="${esc(t)}" aria-label="Rename folder ${esc(t)}">`
-      return `<div class="nb-tabrow"><button class="nb-tab${sel.kind === 'type' && sel.type === t ? ' on' : ''}" data-nb-k="${esc(t)}"><span class="sw" style="--c:${colorOf(t)}"></span><span class="nm">${esc(t)}</span><span class="ct">${c || ''}</span></button><button class="nb-more${menuOpen === key ? ' on' : ''}" data-nb-menu="${esc(key)}" aria-label="Options for ${esc(t)}" aria-expanded="${menuOpen === key}">⋯</button></div>` +
+      return `<div class="nb-tabrow"><button class="nb-tab${sel.kind === 'type' && sel.type === t ? ' on' : ''}" data-nb-k="${esc(t)}"><span class="nb-sw" style="--c:${colorOf(t)}"></span><span class="nm">${esc(t)}</span><span class="ct">${c || ''}</span></button><button class="nb-more${menuOpen === key ? ' on' : ''}" data-nb-menu="${esc(key)}" aria-label="Options for ${esc(t)}" aria-expanded="${menuOpen === key}">⋯</button></div>` +
         (menuOpen === key ? `<div class="nb-tools"><button data-nb-do="rename" data-nb-key="${esc(key)}">Rename</button><button data-nb-do="up" data-nb-key="${esc(key)}" ${i === 0 ? 'disabled' : ''}>Move up</button><button data-nb-do="down" data-nb-key="${esc(key)}" ${i === ts.length - 1 ? 'disabled' : ''}>Move down</button>${total === 0 ? `<button class="dz" data-nb-do="remove" data-nb-key="${esc(key)}">Remove</button>` : ''}</div>` : '')
     }).join('') + (adding === 'type' ? '<input class="nb-rn" data-nb-add="type" placeholder="New folder name" aria-label="New folder name">' : '<button class="nb-addline" data-nb-do="addtype">+ Add folder</button>')
     $('#nb-act-ct').textContent = openActions().filter((x) => matches(x.n)).length || ''
@@ -847,7 +847,7 @@ export function apply(ctx) {
         if (used.includes(o.v.toLowerCase())) return
         if (q && !o.v.toLowerCase().includes(q)) return
         if (pendingHead) { html += `<div class="nb-cb-head">${esc(pendingHead)}</div>`; pendingHead = null }
-        html += `<button type="button" class="nb-cb-opt" data-nb-i="${items.length}">${o.c ? `<span class="sw" style="--c:${o.c}"></span>` : ''}<span>${esc(o.v)}</span>${o.hint ? `<span class="hint">${esc(o.hint)}</span>` : ''}</button>`; items.push(o.v)
+        html += `<button type="button" class="nb-cb-opt" data-nb-i="${items.length}">${o.c ? `<span class="nb-sw" style="--c:${o.c}"></span>` : ''}<span>${esc(o.v)}</span>${o.hint ? `<span class="hint">${esc(o.hint)}</span>` : ''}</button>`; items.push(o.v)
       })
       const t = token()
       if (t && !all.some((o) => !o.head && o.v.toLowerCase() === t.toLowerCase())) { html += `<button type="button" class="nb-cb-opt new" data-nb-i="${items.length}">+ Use “${esc(t)}”</button>`; items.push(t) }
@@ -859,7 +859,7 @@ export function apply(ctx) {
       }
       list.innerHTML = html; idx = -1
     }
-    function hi() { if (!list) return; list.querySelectorAll('.nb-cb-opt').forEach((b, i) => b.classList.toggle('act', i === idx)); const a = list.querySelector('.nb-cb-opt.act'); if (a) a.scrollIntoView({ block: 'nearest' }) }
+    function hi() { if (!list) return; list.querySelectorAll('.nb-cb-opt').forEach((b, i) => b.classList.toggle('nb-hi', i === idx)); const a = list.querySelector('.nb-cb-opt.nb-hi'); if (a) a.scrollIntoView({ block: 'nearest' }) }
     function pick(i) {
       const v = items[i]; if (v == null) return
       if (multi) { const parts = input.value.split(',').slice(0, -1).map((x) => x.trim()).filter(Boolean); parts.push(v); input.value = parts.join(', ') + ', ' } else input.value = v
@@ -991,7 +991,7 @@ export function apply(ctx) {
   function renderGroup() {
     const s = $('#nb-sheet'), { T, g } = sel.gview
     const arr = allNotes().filter((n) => n.type === T && (n.group || 'General') === g).sort(byDateDesc)
-    if (!arr.length) { s.innerHTML = `<div class="nb-crumbs"><span class="nb-chip" style="--c:${colorOf(T)}"><span class="sw"></span>${esc(T)}</span><span>›</span><span>${esc(g)}</span></div><h1 class="nb-gtitle">${esc(g)}</h1><div class="nb-empty">No pages in this subfolder yet.</div>`; s.onclick = null; return }
+    if (!arr.length) { s.innerHTML = `<div class="nb-crumbs"><span class="nb-chip" style="--c:${colorOf(T)}"><span class="nb-sw"></span>${esc(T)}</span><span>›</span><span>${esc(g)}</span></div><h1 class="nb-gtitle">${esc(g)}</h1><div class="nb-empty">No pages in this subfolder yet.</div>`; s.onclick = null; return }
     const last = arr[0], td = today()
     const hl = last.summary ? stampify(toHtml(last.summary), last.call) : last.myNotes ? `<p>${esc(plain(last.myNotes).slice(0, 700))}${plain(last.myNotes).length > 700 ? '…' : ''}</p>` : '<p>No summary was written for this call.</p>'
     const lastDec = (last.decisions || []).filter(Boolean)
@@ -1000,7 +1000,7 @@ export function apply(ctx) {
     const ordered = meta.pageSort === 'oldest' ? [...arr].reverse() : arr
     s.innerHTML = `
   <button class="nb-back" id="nb-back2">‹ ${esc(T)}</button>
-  <div class="nb-crumbs"><span class="nb-chip" style="--c:${colorOf(T)}"><span class="sw"></span>${esc(T)}</span><span>›</span><span>${esc(g)}</span></div>
+  <div class="nb-crumbs"><span class="nb-chip" style="--c:${colorOf(T)}"><span class="nb-sw"></span>${esc(T)}</span><span>›</span><span>${esc(g)}</span></div>
   <h1 class="nb-gtitle">${esc(g)}</h1>
   <div class="nb-src">${arr.length} page${arr.length > 1 ? 's' : ''} · last call ${esc(fmtDate(last.date))}${arr.length > 1 ? ' · first ' + esc(fmtDate(arr[arr.length - 1].date)) : ''}</div>
   <div class="nb-gsearch"><input class="nb-search" id="nb-gq" type="search" placeholder="Search only in ${esc(g)}" aria-label="Search only in ${esc(g)}" value="${esc(gq)}" autocomplete="off"></div>
@@ -1057,7 +1057,7 @@ export function apply(ctx) {
     const busy = n.call && filed[n.call] && filed[n.call].state === 'filing'
     s.innerHTML = `${reviewHtml(n)}
   <button class="nb-back" id="nb-back2">‹ ${esc(n.group || 'Back')}</button>
-  <div class="nb-crumbs"><span class="nb-chip" style="--c:${colorOf(n.type)}"><span class="sw"></span>${esc(n.type || 'Other')}</span><span>›</span><button class="nb-crumbg" data-nb-gopen="1">${esc(n.group || 'General')}</button><span>›</span><span>${esc(fmtDate(n.date))}${n.start ? ' · ' + esc(n.start) + (n.end ? '–' + esc(n.end) : '') : ''}</span></div>
+  <div class="nb-crumbs"><span class="nb-chip" style="--c:${colorOf(n.type)}"><span class="nb-sw"></span>${esc(n.type || 'Other')}</span><span>›</span><button class="nb-crumbg" data-nb-gopen="1">${esc(n.group || 'General')}</button><span>›</span><span>${esc(fmtDate(n.date))}${n.start ? ' · ' + esc(n.start) + (n.end ? '–' + esc(n.end) : '') : ''}</span></div>
   <input class="nb-ttl" id="nb-f-title" value="${esc(n.title || '')}" placeholder="Untitled meeting" aria-label="Title">
   <div class="nb-meta">
     <div class="nb-field"><label for="nb-f-type">Type</label><span class="nb-cb"><input id="nb-f-type" autocomplete="off" value="${esc(n.type || '')}"><button class="nb-cb-btn" tabindex="-1" aria-label="Show folders">▼</button></span></div>
