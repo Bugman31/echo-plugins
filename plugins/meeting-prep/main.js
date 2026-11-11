@@ -32,7 +32,8 @@ export function prepPrompt({ date, me, connectors, skipInternal, only }) {
 
 Gather, read-only (never send, reply, book, create or change anything):
 1. The meetings: ${connectors ? "the Microsoft 365 connector's calendar search for the day (don't use Bash: this run can't)" : "run Echo's `echoctl calendar events --days 2` (times are UTC: convert to the user's local time)"}. Leave out declined and cancelled meetings, all-day events and holds with no other attendees.${skipInternal ? ' Also leave out internal meetings (colleagues only) when nothing below is found about them.' : ''}
-2. The user's Meeting Notebook, their own record of every past meeting. First Read \`.echo/plugins/meeting-notebook/index.md\` in the working folder (it is a hidden folder: give the Read tool that exact path): one line a page, newest first — id | date | title | type › group | attendees | open actions. For each meeting, pick the pages about the same client, person or series, or with the same attendees (up to 4, newest first), and Read each one at \`.echo/plugins/meeting-notebook/notes/<id>.json\`: its summary, decisions, action items (owner, due, done) and the user's notes. Do this for every meeting.
+2. The user's Meeting Notebook, their own record of every past meeting. First Read \`.echo/plugins/meeting-notebook/index.md\` in the working folder (it is a hidden folder: give the Read tool that exact path): one line a page, newest first — id | date | title | type › group | attendees | open actions. For each meeting, pick the pages about the same client, person or series, or with the same attendees (up to 4, newest first), and Read each one at \`.echo/plugins/meeting-notebook/notes/<id>.json\`: its summary, decisions, action items (owner, due, done), the user's notes and \`screens\`. Do this for every meeting.
+   A page's \`screens\` are what someone shared on screen in that call — slides, documents, demos — as [{t, caption}] (t = seconds into the call), and its \`call\` is the Echo call folder. When an earlier screen matters for this meeting (a proposal, pricing, a plan, a scope, a timeline, an org chart), use its facts in background (source like "(screen, Corning review, Nov 11)") and list it in the meeting's \`screens\`. To check a figure you may Read the image itself at \`calls/<call>/frames/<mm>m<ss>s.jpg\` (mm = whole minutes, ss = seconds, two digits each, as the times give them): at most 4 images in the whole run.
 3. Echo's own recorded calls, when the notebook has none for a meeting: ${connectors ? "Echo's search (the mcp__echo tools), if it is there" : '`calls/<folder>/` here (notes.md, actions.json) for calls of the same series or with the same people'}.
 Use the Read tool for files${connectors ? ', never Bash: this run can\'t use it' : ''}.
 ${connectors ? `4. Teams chats and mail from the last 21 days (the Microsoft 365 connector): the meeting's own chat, chats and threads with its attendees, the invite's body, decks and documents shared for it. Read the messages, not just their subjects.
@@ -40,7 +41,7 @@ ${connectors ? `4. Teams chats and mail from the last 21 days (the Microsoft 365
 If a connector isn't available, say so in "sources" and carry on with the rest.` : `4. Teams chats, mail search and CRM aren't available in this run: say so in "sources".`}
 
 Answer in exactly this shape:
-{"date":"${date}","summary":"","sources":{"calendar":"","notebook":"","echo":"","teams":"","mail":"","crm":""},"meetings":[{"event":"","title":"","start":"HH:MM","end":"HH:MM","organizer":"","role":"","external":false,"purpose":"","background":"","people":[{"name":"","who":"","note":""}],"you_owe":"","they_owe":"","likely":"","risks":"","crm":"","links":[{"label":"","url":""}],"used":[""]}]}
+{"date":"${date}","summary":"","sources":{"calendar":"","notebook":"","echo":"","teams":"","mail":"","crm":""},"meetings":[{"event":"","title":"","start":"HH:MM","end":"HH:MM","organizer":"","role":"","external":false,"purpose":"","background":"","people":[{"name":"","who":"","note":""}],"you_owe":"","they_owe":"","likely":"","risks":"","crm":"","links":[{"label":"","url":""}],"screens":[{"call":"","t":0,"caption":"","why":""}],"used":[""]}]}
 
 How to fill it (Markdown in the text fields):
 - summary: two sentences on the day: how many meetings, which matter most and why.
@@ -55,6 +56,7 @@ How to fill it (Markdown in the text fields):
 - risks: what to watch for: sensitivities, open disagreements, missing people, deadlines, anything that could go wrong. Empty if nothing.
 - crm: the opportunity in one or two lines (name, stage, value, close date, next step), "No opportunity found", or empty for an internal meeting.
 - links: Join, Invite, then the decks, documents, chats and mail that matter, each with a short label. Only links you actually found.
+- screens: up to 3 earlier shared screens worth seeing again before this meeting, most useful first: call (the page's \`call\`), t (from its \`screens\`), caption (what it shows, from the page or the image) and why (one short line: why it matters today). Only screens you found on a page; empty when none matters.
 - used: what you drew on, like "notebook: Aurora Bank weekly, Oct 29" or "Teams: supplier week chat".
 Use only what you found. Never invent names, numbers, dates or links; leave a field empty instead. Order meetings by start time.
 `
@@ -80,6 +82,8 @@ export function cleanPrep(p, date, md) {
       organizer: str(m.organizer).trim(), role: str(m.role).trim(), external: !!m.external,
       people: (Array.isArray(m.people) ? m.people : []).map((x) => ({ name: str(x && x.name).trim(), who: str(x && x.who).trim(), note: str(x && x.note).trim() })).filter((x) => x.name).slice(0, 8),
       links: (Array.isArray(m.links) ? m.links : []).map((l) => ({ label: str(l && l.label).trim().slice(0, 60), url: safeUrl(l && l.url) })).filter((l) => l.label && l.url).slice(0, 12),
+      screens: (Array.isArray(m.screens) ? m.screens : []).map((x) => ({ call: str(x && x.call).trim(), t: typeof (x && x.t) === 'number' && x.t >= 0 ? Math.round(x.t) : -1, caption: str(x && x.caption).trim().slice(0, 400), why: str(x && x.why).trim().slice(0, 240) }))
+        .filter((x) => /^\d{4}-\d{2}-\d{2}_\d{6}[^\\/]{0,190}$/.test(x.call) && !x.call.includes('..') && x.t >= 0).slice(0, 4),
       used: (Array.isArray(m.used) ? m.used : []).map(str).map((s) => s.trim()).filter(Boolean).slice(0, 12),
       html: {},
     }
@@ -100,6 +104,7 @@ export function briefMarkdown(rec) {
       m.you_owe && `*You owe:* ${m.you_owe}`,
       m.they_owe && `*They owe:* ${m.they_owe}`,
       m.risks && `*Watch out for:* ${m.risks}`,
+      m.screens.length ? `*On screen before:* ${m.screens.map((x) => x.caption + (x.why ? ` (${x.why})` : '')).join('; ')}` : '',
       m.links.length ? m.links.slice(0, 4).map((l) => `[${l.label}](${l.url})`).join(' · ') : '',
     ].filter(Boolean).join('\n\n')),
   ].filter(Boolean).join('\n\n---\n\n')

@@ -73,6 +73,16 @@ const CSS = `
 .mprep .mp-links{display:flex;flex-wrap:wrap;gap:6px}
 .mprep .mp-links a{font-size:12px;padding:3px 12px;border-radius:100px;border:1px solid var(--rule);background:var(--sheet);color:var(--ink);text-decoration:none}
 .mprep .mp-links a:hover{border-color:var(--ink)}
+.mprep .mp-shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+.mprep .mp-shot{margin:0;display:flex;flex-direction:column;gap:6px;min-width:0}
+.mprep .mp-shot>button{border:1px solid var(--rule);border-radius:6px;padding:0;background:var(--sheet);cursor:zoom-in;overflow:hidden;aspect-ratio:16/10;display:flex;align-items:center;justify-content:center;color:var(--muted);font:inherit;font-size:12px}
+.mprep .mp-shot>button:hover,.mprep .mp-shot>button:focus-visible{border-color:var(--ink)}
+.mprep .mp-shot img{width:100%;height:100%;object-fit:cover;object-position:top;display:block}
+.mprep .mp-shot figcaption{font-size:13px;line-height:1.45;font-weight:400}
+.mprep .mp-shot figcaption span{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.mprep .mp-shot figcaption .mp-at{border:0;background:none;padding:0 6px 0 0;font:inherit;font-weight:700;color:var(--link);cursor:pointer}
+.mprep .mp-lightbox{position:fixed;inset:0;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;z-index:70;cursor:zoom-out;padding:16px}
+.mprep .mp-lightbox img{max-width:96vw;max-height:94vh;border-radius:6px;background:#fff}
 .mprep .mp-used{display:flex;flex-wrap:wrap;gap:6px}
 .mprep .mp-used span{font-size:11.5px;color:var(--muted);padding:2px 10px;border-radius:100px;border:1px solid var(--rule)}
 .mprep .mp-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:8px 14px;border-radius:5px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60}
@@ -170,13 +180,40 @@ export function apply(ctx) {
       <div style="display:flex;flex-direction:column;gap:8px"><p class="mp-lbl">${esc([clock(m.start) + (m.end ? ' to ' + clock(m.end) : ''), m.role, m.external ? 'External' : 'Internal'].filter(Boolean).join(' · '))}</p><h2>${esc(m.title)}</h2></div>
       <div class="mp-bar">${join ? `<a class="mp-pill pri" href="${esc(join.url)}" data-ext="1" style="text-decoration:none">Join</a>` : ''}<button class="mp-pill" data-mp-copy>Copy brief</button><button class="mp-pill" data-mp-again>Prepare again</button></div>
       <dl>${rows}
+        ${(m.screens || []).length ? `<dt>On screen before</dt><dd><div class="mp-shots">${m.screens.map((x, i) => shotHtml(x, i)).join('')}</div></dd>` : ''}
         ${m.links.length ? `<dt>Links</dt><dd class="mp-links">${m.links.map((l) => `<a href="${esc(l.url)}" data-ext="1" target="_blank" rel="noopener">${esc(l.label)}</a>`).join('')}</dd>` : ''}
         ${m.used.length ? `<dt>Sources</dt><dd class="mp-used">${m.used.map((u) => `<span>${esc(u)}</span>`).join('')}</dd>` : ''}
       </dl></div>`
   }
+  /* Earlier shared screens: the image from that call's folder in Echo (nearest frame to the time), its caption and why. */
+  const frames = {}, framesAsked = {}
+  const mmss = (t) => `${Math.floor(t / 60)}:${pad2(t % 60)}`
+  const callTitle = (c) => {
+    const m = /^(\d{4}-\d{2}-\d{2})_\d{6}-?(.*)$/.exec(c); if (!m) return c
+    const name = m[2].replace(/-/g, ' '), when = new Date(m[1] + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    return (name ? name[0].toUpperCase() + name.slice(1) + ', ' : 'Call, ') + when
+  }
+  function frameOf(x) {
+    const list = frames[x.call]
+    if (!list) { askFrames(x.call); return undefined }
+    let best = null, d = 6
+    for (const f of list) { const e = Math.abs(f.t - x.t); if (e < d) { d = e; best = f } }
+    return best
+  }
+  function askFrames(call) {
+    if (framesAsked[call]) return
+    framesAsked[call] = true
+    fetch(`api/call/${encodeURIComponent(call)}`).then((r) => (r.ok ? r.json() : null)).then((d) => { frames[call] = (d && Array.isArray(d.frames) ? d.frames : []).filter((f) => f && f.url && typeof f.t === 'number') })
+      .catch(() => { frames[call] = [] }).finally(draw)
+  }
+  function shotHtml(x, i) {
+    const f = frameOf(x)
+    const pic = f ? `<button data-mp-shot="${esc(f.url)}" aria-label="Show full size"><img loading="lazy" src="${esc(f.url)}" alt="${esc(x.caption || 'Shared screen')}"></button>` : `<button disabled>${f === undefined ? 'Loading…' : 'Image no longer in Echo'}</button>`
+    return `<figure class="mp-shot">${pic}<figcaption><button class="mp-at" data-mp-at="${i}" title="Open this moment in Echo">${esc(mmss(x.t))}</button>${esc(x.caption || 'Shared screen')}<span>${esc(callTitle(x.call))}${x.why ? ' · ' + esc(x.why) : ''}</span></figcaption></figure>`
+  }
   const plain = (s) => String(s || '').replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '$1').replace(/[*_`]/g, '')
   function briefText(m) {
-    return [`${clock(m.start)} ${m.title}`, ...ROWS.map(([f, label]) => f === 'people' ? (m.people.length ? `${label}:\n${m.people.map((p) => `- ${p.name}${p.who ? ` (${p.who})` : ''}${p.note ? `: ${plain(p.note)}` : ''}`).join('\n')}` : '') : m[f] ? `${label}:\n${plain(m[f])}` : '').filter(Boolean), m.links.length ? `Links:\n${m.links.map((l) => `- ${l.label}: ${l.url}`).join('\n')}` : ''].filter(Boolean).join('\n\n')
+    return [`${clock(m.start)} ${m.title}`, ...ROWS.map(([f, label]) => f === 'people' ? (m.people.length ? `${label}:\n${m.people.map((p) => `- ${p.name}${p.who ? ` (${p.who})` : ''}${p.note ? `: ${plain(p.note)}` : ''}`).join('\n')}` : '') : m[f] ? `${label}:\n${plain(m[f])}` : '').filter(Boolean), (m.screens || []).length ? `On screen before:\n${m.screens.map((x) => `- ${x.caption}${x.why ? ` (${x.why})` : ''}`).join('\n')}` : '', m.links.length ? `Links:\n${m.links.map((l) => `- ${l.label}: ${l.url}`).join('\n')}` : ''].filter(Boolean).join('\n\n')
   }
   async function start(event) {
     try {
@@ -189,10 +226,14 @@ export function apply(ctx) {
     if (t.dataset.mpSel !== undefined) { selected = +t.dataset.mpSel; root.querySelector('.mp-app').classList.add('mp-showing'); draw(); return }
     if (t.dataset.mpDay !== undefined) { const n = +t.dataset.mpDay; date = n === 0 ? day() : shift(date, n); selected = 0; rec = null; draw(); load(); return }
     if (t.dataset.mpRun !== undefined) { start(); return }
+    if (t.dataset.mpShot) { const o = document.createElement('div'); o.className = 'mp-lightbox'; const im = document.createElement('img'); im.src = t.dataset.mpShot; o.appendChild(im); o.onclick = () => o.remove(); root.appendChild(o); return }
     const m = rec && (rec.meetings || [])[selected]
+    if (t.dataset.mpAt !== undefined && m) { const x = (m.screens || [])[+t.dataset.mpAt]; if (x) { const l = `echo://call/${x.call}?t=${x.t}`; if (window.echo && window.echo.openLink) window.echo.openLink(l); else ctx.go(`call/${x.call}/transcript`) } return }
     if (t.dataset.mpAgain !== undefined && m) { start({ id: m.event, subject: m.title, start: `${date}T${m.start || '09:00'}:00` }); return }
     if (t.dataset.mpCopy !== undefined && m) { try { await navigator.clipboard.writeText(briefText(m)); toast('Brief copied') } catch { toast("Couldn't copy") } }
   })
+
+  root.addEventListener('keydown', (e) => { if (e.key === 'Escape') { const l = root.querySelector('.mp-lightbox'); if (l) l.remove() } })
 
   ctx.activities.add({
     id: 'prep',

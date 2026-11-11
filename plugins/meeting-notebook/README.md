@@ -41,6 +41,18 @@ A call page's action items are the call's own action items in Echo (`actions.jso
 - An action you add on the page stays in the notebook only. Echo has no way for a plugin to add to a
   call's list, and the page marks such items *Notebook only*.
 
+## Shared screens
+
+With **Save snapshots of shared screens** on in Echo's settings, Echo keeps a snapshot each time a shared
+screen changes (slides, documents, demos), and its minutes describe each one under **On screen**. A
+page shows them under **Shared screens**: the images with what each showed and the moment, which opens
+the transcript there. Click one for a larger view, step through them, or **Add to My notes** to keep a
+copy in your own notes. The captions also go to Claude when you run an action, and to Meeting Prep.
+Pages filed before this version get their screens in the background a few minutes after the update.
+
+Echo captures only what someone else shares, not your own screen. Calls imported from a Teams transcript
+have no screens.
+
 ## Run an action with Claude
 
 *Run with Claude* on a Claude action opens a side panel:
@@ -75,3 +87,6 @@ echoctl plugin install meeting-notebook --yes
 
 After a change, raise `version` in `echo-plugin.json`, then run `echoctl plugin marketplace update <name>`
 and `echoctl plugin update meeting-notebook`.
+
+To try both halves in a browser against a fake Echo, serve the folder above `dev/` and open
+`dev/harness.html`.

@@ -40,6 +40,13 @@ Each run is one Claude run and is read-only. It never sends, replies, books or c
 
 Settings → From plugins → Meeting Prep shows what each source gave the last prep.
 
+## Screens from earlier calls
+
+When a past call shared something that matters for today (the proposal, pricing, a plan, the scope),
+the brief uses what it showed and puts the slide itself under **On screen before**, with why it matters.
+They come from the Meeting Notebook's shared screens; Claude may look at up to four of the images in a
+run to check a figure. Click a slide to see it full size, or its time to open that moment in Echo.
+
 ## Where the briefs are
 
 One file per day: `<data folder>/.echo/plugins/meeting-prep/prep/<YYYY-MM-DD>.json`.

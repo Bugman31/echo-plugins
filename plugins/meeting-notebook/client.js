@@ -197,6 +197,16 @@ const CSS = `
 .mnb .nb-crow .st.bad{color:var(--warn)}
 .mnb .nb-crow button{border:1px solid var(--rule);background:var(--sheet);border-radius:6px;padding:4px 10px;font-size:12px;white-space:nowrap}
 .mnb .nb-crow button:hover{border-color:var(--accent);color:var(--accent)}
+.mnb .nb-shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
+.mnb .nb-shot{margin:0;display:flex;flex-direction:column;gap:6px;min-width:0}
+.mnb .nb-shot>button{border:1px solid var(--rule);border-radius:6px;padding:0;background:var(--sheet);cursor:zoom-in;overflow:hidden;aspect-ratio:16/10;display:block}
+.mnb .nb-shot>button:hover,.mnb .nb-shot>button:focus-visible{border-color:var(--accent)}
+.mnb .nb-shot img{width:100%;height:100%;object-fit:cover;object-position:top;display:block}
+.mnb .nb-shot figcaption{font-size:12.5px;line-height:1.45;color:var(--ink);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.mnb .nb-shot figcaption .nb-ts{padding:0 6px 0 0}
+.mnb .nb-big{border:1px solid var(--rule);border-radius:6px;padding:0;background:#fff;cursor:zoom-in;display:block;width:100%}
+.mnb .nb-big img{width:100%;display:block;border-radius:5px}
+.mnb .nb-shotcap{font-size:14px;line-height:1.55;margin:0}
 .mnb .nb-lightbox{position:fixed;inset:0;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;z-index:50;cursor:zoom-out;padding:16px}
 .mnb .nb-lightbox img{max-width:96vw;max-height:94vh;border-radius:6px;background:#fff}
 .mnb mark{background:var(--hl-y);color:inherit;border-radius:2px;padding:0 1px}
@@ -482,6 +492,7 @@ export function apply(ctx) {
     return 'var(' + v + ')'
   }
 
+  const frameCache = {}, framesLoading = {}
   let notes = {}, filed = {}, filingNow = [], runningNow = [], deliver = [], me = '', loaded = false, lastLoad = 0, loading = null
   const sel = { kind: 'today', type: null, id: null, gview: null }
   const openGroups = new Set()
@@ -803,9 +814,9 @@ export function apply(ctx) {
   }
   /* images in My notes: kept in the page as small JPEGs (each save goes to Echo in one request) */
   async function shrink(file) {
-    const bmp = await createImageBitmap(file); const sc = Math.min(1, 1100 / Math.max(bmp.width, bmp.height))
+    const bmp = file instanceof HTMLImageElement ? { img: file, width: file.naturalWidth, height: file.naturalHeight } : await createImageBitmap(file); const sc = Math.min(1, 1100 / Math.max(bmp.width, bmp.height))
     const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(bmp.width * sc)); c.height = Math.max(1, Math.round(bmp.height * sc))
-    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(bmp, 0, 0, c.width, c.height)
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(bmp.img || bmp, 0, 0, c.width, c.height)
     return c.toDataURL('image/jpeg', 0.72)
   }
   async function insertImages(ed, files, save) {
@@ -822,7 +833,7 @@ export function apply(ctx) {
   function pickImages(ed, save) { const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.multiple = true; i.onchange = () => { const fs = [...i.files].filter((f) => /^image\//.test(f.type)); if (fs.length) insertImages(ed, fs, save) }; i.click() }
   root.addEventListener('dblclick', (e) => {
     const im = e.target.closest && e.target.closest('.nb-rte img'); if (!im) return
-    const o = document.createElement('div'); o.className = 'nb-lightbox'; const x = document.createElement('img'); x.src = im.src; o.appendChild(x); o.onclick = () => o.remove(); root.appendChild(o)
+    lightbox(im.src)
   })
   root.addEventListener('keydown', (e) => { if (e.key === 'Escape') { const l = root.querySelector('.nb-lightbox'); if (l) l.remove() } })
 
@@ -1071,11 +1082,13 @@ export function apply(ctx) {
   <div class="nb-sec" data-nb-s="dec"><h3><button class="nb-sh" aria-expanded="true"><span class="car">›</span>Decisions <span class="n">${decs.length || ''}</span></button></h3>
     <div class="nb-list">${decs.map((d, i) => `<div class="nb-row"><span class="bullet"></span><textarea class="nb-wrap" rows="1" data-nb-dec="${i}" aria-label="Decision ${i + 1}">${esc(d)}</textarea>${n.call && tParse(d) != null ? tsBtn(n.call, tParse(d)) : ''}<button class="nb-x" data-nb-decx="${i}" aria-label="Remove decision">✕</button></div>`).join('')}</div>
     <button class="nb-add" id="nb-add-dec">+ Add decision</button></div>
+  <div class="nb-sec" data-nb-s="scr" id="nb-screens" ${shotsOf(n).length ? '' : 'hidden'}>${screensInner(n)}</div>
   <div class="nb-sec" data-nb-s="act"><h3><button class="nb-sh" aria-expanded="true"><span class="car">›</span>Action items <span class="n">${open ? open + ' open' : ''}</span></button></h3>
     <div class="nb-list">${acts.map((a, i) => `<div class="nb-act${a.done ? ' done' : ''}"><input type="checkbox" data-nb-actd="${i}" ${a.done ? 'checked' : ''} aria-label="Done"><div class="nb-txc"><textarea class="tx nb-wrap" rows="1" data-nb-actt="${i}" placeholder="What needs doing" aria-label="Action">${esc(a.text || '')}</textarea>${howHtml(a, i)}</div><span class="nb-cb nb-ow-wrap"><input type="text" class="ow" data-nb-acto="${i}" autocomplete="off" value="${esc(a.owner || '')}" placeholder="Owner" aria-label="Owner"><button class="nb-cb-btn" tabindex="-1" aria-label="Show people">▼</button></span><input type="date" class="du" data-nb-actu="${i}" value="${esc(a.due || '')}" aria-label="Due date"><button class="nb-x" data-nb-actx="${i}" aria-label="Remove action">✕</button></div>`).join('')}</div>
     <button class="nb-add" id="nb-add-act">+ Add action item</button></div>
   <div class="nb-sec nb-notes" data-nb-s="notes"><h3><button class="nb-sh" aria-expanded="true"><span class="car">›</span>My notes</button></h3>${rteHtml('myNotes', n.myNotes, 'Your own notes. Filing a call again never overwrites this box.')}</div>
   <div class="nb-foot"><span class="nb-save" id="nb-save"></span><span class="sp"></span><button class="nb-danger" id="nb-del">Delete page</button></div>`
+    if (n.call && !frameCache[n.call]) loadFrames(n.call)
     const sb = document.createElement('div'); sb.style.cssText = 'display:flex;gap:14px;margin:-8px 0 4px'
     sb.innerHTML = '<button class="nb-secall" data-nb-all="0">Collapse all</button><button class="nb-secall" data-nb-all="1">Expand all</button>'
     s.querySelector('.nb-src').after(sb)
@@ -1222,6 +1235,57 @@ export function apply(ctx) {
     if (b) { e.preventDefault(); openMoment(b.dataset.nbTcall, +b.dataset.nbT) }
   })
 
+  /* ---------- shared screens: Echo's frames of the call, with the minutes' "On screen" captions ---------- */
+  function setFrames(call, d) {
+    const had = JSON.stringify(frameCache[call] || null)
+    frameCache[call] = (Array.isArray(d && d.frames) ? d.frames : []).filter((f) => f && f.url && typeof f.t === 'number').sort((a, b) => a.t - b.t)
+    if (had !== JSON.stringify(frameCache[call])) refreshScreens(call)
+  }
+  function loadFrames(call) {
+    if (framesLoading[call]) return
+    framesLoading[call] = true
+    getJson(`api/call/${encodeURIComponent(call)}`).then((d) => { segCache[call] = segCache[call] || (Array.isArray(d.segments) ? d.segments : []); setFrames(call, d) })
+      .catch(() => { frameCache[call] = []; refreshScreens(call) }).finally(() => { framesLoading[call] = false })
+  }
+  /** The call's frames, each with its caption from the page (the "On screen" line at that moment). */
+  function shotsOf(n) {
+    if (!n || !n.call) return []
+    const caps = Array.isArray(n.screens) ? n.screens : []
+    return (frameCache[n.call] || []).map((f) => {
+      let c = null, best = 4
+      for (const x of caps) { const d = Math.abs(x.t - f.t); if (d < best) { best = d; c = x } }
+      return { t: f.t, url: f.url, caption: (c && c.caption) || '' }
+    })
+  }
+  function screensInner(n) {
+    const shots = shotsOf(n)
+    return `<h3><button class="nb-sh" aria-expanded="true"><span class="car">›</span>Shared screens <span class="n">${shots.length || ''}</span></button></h3>
+    <div class="nb-shots">${shots.map((x, i) => `<figure class="nb-shot"><button data-nb-shot="${i}" aria-label="Open screen at ${clock(x.t)}"><img loading="lazy" src="${esc(x.url)}" alt="${esc(x.caption || 'Shared screen')}"></button><figcaption>${tsBtn(n.call, x.t)}${esc(x.caption || 'Shared screen')}</figcaption></figure>`).join('')}</div>`
+  }
+  function refreshScreens(call) {
+    const n = notes[sel.id]
+    if (n && n.call === call) {
+      const box = root.querySelector('#nb-screens')
+      if (box) { box.innerHTML = screensInner(n); box.hidden = !shotsOf(n).length; applySecs() }
+    }
+    if (dr && dr.kind === 'screen' && notes[dr.id] && notes[dr.id].call === call) renderDrawer()
+  }
+  root.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('[data-nb-shot]')
+    if (b && sel.id) { e.preventDefault(); dr = { kind: 'screen', id: sel.id, i: +b.dataset.nbShot }; renderDrawer() }
+  })
+  function lightbox(src) { const o = document.createElement('div'); o.className = 'nb-lightbox'; const x = document.createElement('img'); x.src = src; o.appendChild(x); o.onclick = () => o.remove(); root.appendChild(o) }
+  async function shotToNotes(n, x) {
+    try {
+      toast('Adding the screen to My notes…')
+      const im = new Image(); im.src = x.url; await im.decode()
+      const src = await shrink(im)
+      if (src.length > 220000) { toast('That screen is too large to keep in My notes.'); return }
+      const add = `<p><img src="${src}" alt="${esc(x.caption || 'Shared screen')}"></p><p><i>${esc(clock(x.t))} · ${esc(x.caption || 'Shared screen')}</i></p>`
+      queue(n.id, { myNotes: sanitize((n.myNotes || '') + add) }); if (sel.id === n.id && !editing()) renderPage(); toast('Added to My notes')
+    } catch (err) { toast("Couldn't add it: " + ((err && err.message) || err)) }
+  }
+
   /* ---------- Echo's own action items: one list, ticked in either place ---------- */
   const getJson = async (p) => { const r = await fetch(p); if (!r.ok) throw new Error(`${r.status} ${p}`); return r.json() }
   const echoRev = {}, segCache = {}
@@ -1248,6 +1312,7 @@ export function apply(ctx) {
       const d = await getJson(`api/call/${encodeURIComponent(call)}`)
       echoRev[call] = rev
       segCache[call] = Array.isArray(d.segments) ? d.segments : []
+      setFrames(call, d)
       const items = Array.isArray(d.actions) ? d.actions.filter((x) => x && x.id) : []
       const cur = notes[id]; if (!cur || !items.length) return
       const acts = (cur.actions || []).map((a) => ({ ...a })), used = new Set()
@@ -1404,6 +1469,17 @@ export function apply(ctx) {
         <p class="nb-note">Every highlight, decision and action keeps the moment it came from, so you can check it before you share the page.</p>`
       return
     }
+    if (dr.kind === 'screen') {
+      const n = notes[dr.id], shots = shotsOf(n), x = shots[dr.i]
+      if (!x) { dr = null; renderDrawer(); return }
+      drawer.innerHTML = `<div class="nb-dhead"><p class="nb-lbl">Shared screen ${dr.i + 1} of ${shots.length}</p>${close}</div><h2>${esc(n.title || 'Untitled meeting')} at ${clock(x.t)}</h2>
+        <button class="nb-big" data-nb-sbig aria-label="Show full size"><img src="${esc(x.url)}" alt="${esc(x.caption || 'Shared screen')}"></button>
+        <p class="nb-shotcap">${esc(x.caption || 'Shared screen (the minutes don\'t describe this one).')}</p>
+        <div class="nb-bar"><button class="nb-pill" data-nb-sprev ${dr.i ? '' : 'disabled'} aria-label="Previous screen">‹</button><button class="nb-pill" data-nb-snext ${dr.i < shots.length - 1 ? '' : 'disabled'} aria-label="Next screen">›</button>
+          <button class="nb-pill pri" data-nb-stalk>What was said</button><button class="nb-pill" data-nb-snotes>Add to My notes</button><button class="nb-pill" data-nb-secho>Open in Echo</button></div>
+        <p class="nb-note">Echo keeps a snapshot each time the shared screen changes, and Claude's minutes say what each one showed. The images stay in the call's folder on this computer.</p>`
+      return
+    }
     const n = notes[dr.id], a = n && (n.actions || [])[dr.i]
     if (!a) { dr = null; renderDrawer(); return }
     const run = a.run || {}, busy = run.state === 'running', has = !!run.answer
@@ -1451,6 +1527,16 @@ export function apply(ctx) {
     if (t.dataset.nbDclose !== undefined) { dr = null; renderDrawer(); return }
     if (t.dataset.nbEcholink !== undefined) { openLink(dr.call, dr.t); return }
     if (t.dataset.nbJump !== undefined) { openLink(dr.call, +t.dataset.nbJump); return }
+    if (dr.kind === 'screen') {
+      const n = notes[dr.id], shots = shotsOf(n), x = shots[dr.i]; if (!x) return
+      if (t.dataset.nbSprev !== undefined && dr.i > 0) { dr.i--; renderDrawer() }
+      else if (t.dataset.nbSnext !== undefined && dr.i < shots.length - 1) { dr.i++; renderDrawer() }
+      else if (t.dataset.nbSbig !== undefined) lightbox(x.url)
+      else if (t.dataset.nbStalk !== undefined) openMoment(n.call, x.t)
+      else if (t.dataset.nbSecho !== undefined) openLink(n.call, x.t)
+      else if (t.dataset.nbSnotes !== undefined) { t.disabled = true; await shotToNotes(n, x); t.disabled = false }
+      return
+    }
     if (dr.kind !== 'run') return
     const n = notes[dr.id], a = n && (n.actions || [])[dr.i]; if (!a) return
     const run = a.run || {}

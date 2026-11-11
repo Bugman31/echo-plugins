@@ -6,7 +6,8 @@
 //   notes/<id>.json   {type, group, title, date, start, end, attendees[], summary (HTML), decisions[],
 //                      actions[{text, owner, due, done, mode: claude|manual, prompt, how, echoId, t, run}],
 //                      myNotes (HTML), source: echo|manual|auto|import, hasTranscript, call, link, eventId,
-//                      createdAt, updatedAt, editedByMe, touched[], reviewed, review{at, changes[], proposed{}}}
+//                      createdAt, updatedAt, editedByMe, touched[], reviewed, review{at, changes[], proposed{}},
+//                      screens[{t, caption}]}
 //   meta.json         folder order, colours, subfolder order and sorting (the artifact's meta/structure)
 //   filed.json        Echo call folder → {id, state: filing|done|failed|removed, at, error}
 //   runs/<stamp>/     each Claude run's prompt, answer and log (the last 30 kept)
@@ -16,6 +17,10 @@
 // (`actions.json`, each kept with its `echoId`), so ticking one here ticks it in Echo. Filing again replaces
 // the fields the user hasn't edited and records what it changed (`review.changes`, to undo); for fields the
 // user edited it only proposes (`review.proposed`, to accept).
+//
+// Screens: with "Save snapshots of shared screens" on, Echo keeps the frames of what someone shared and its
+// minutes describe each under "On screen" (`[mm:ss] what it showed`). A page keeps those lines as `screens`
+// (read from the minutes, not by Claude); the window shows the images from the call's own folder.
 
 const FIELDS = ['type', 'group', 'title', 'date', 'start', 'end', 'attendees', 'summary', 'decisions', 'actions', 'myNotes']
 const TYPES = ['Client', 'Partner', '1:1', 'Internal', 'Industry & Analyst', 'Other']
@@ -35,8 +40,26 @@ const strs = (v) => (Array.isArray(v) ? v.map(str).map((x) => x.trim()).filter(B
 const ymd = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(str(v)) ? str(v) : '')
 const hm = (v) => (/^\d{2}:\d{2}$/.test(str(v)) ? str(v) : '')
 const secs = (v) => (typeof v === 'number' && isFinite(v) && v >= 0 ? Math.round(v) : null)
+const clockOf = (t) => { const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), x = t % 60; return (h ? h + ':' + String(m).padStart(2, '0') : String(m).padStart(2, '0')) + ':' + String(x).padStart(2, '0') }
 const textKey = (s) => str(s).toLowerCase().replace(/[^a-z0-9а-я]+/gi, ' ').trim()
 const plainText = (html) => str(html).replace(/<\/(p|li|h4)>/gi, '\n').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\n{3,}/g, '\n\n').trim()
+
+/** The "On screen" lines of Echo's minutes: [{t, caption}], in time order. */
+export function parseScreens(md) {
+  const lines = str(md).split(/\r?\n/)
+  const at = lines.findIndex((l) => /^#{1,4}\s*on screen\b/i.test(l.trim()))
+  if (at < 0) return []
+  const out = []
+  for (const l of lines.slice(at + 1)) {
+    if (/^#{1,4}\s/.test(l.trim())) break
+    const m = /^\s*[-*]\s*\[(?:(\d{1,2}):)?(\d{1,3}):(\d{2})\]\s*(.*)$/.exec(l)
+    if (!m) continue
+    const t = (+(m[1] || 0)) * 3600 + (+m[2]) * 60 + (+m[3])
+    const caption = m[4].replace(/\*\*/g, '').trim()
+    if (!out.some((x) => x.t === t)) out.push({ t, caption })
+  }
+  return out.sort((a, b) => a.t - b.t).slice(0, 60)
+}
 
 /** The page fields from a filing run's answer, cleaned to the notebook's shape. */
 export function cleanPage(p, fallback) {
@@ -160,6 +183,7 @@ export function runPrompt({ page, action, earlier, source, followup, me }) {
     (n.decisions || []).length ? `Decisions:\n${n.decisions.map((d) => `- ${d}`).join('\n')}` : '',
     (n.actions || []).length ? `Action items:\n${n.actions.map((a) => `- [${a.done ? 'x' : ' '}] ${a.text}${a.owner ? ` (${a.owner}${a.due ? `, due ${a.due}` : ''})` : ''}`).join('\n')}` : '',
     plainText(n.myNotes) ? `The user's notes:\n${plainText(n.myNotes)}` : '',
+    (n.screens || []).length ? `Shared on screen:\n${n.screens.map((x) => `- [${clockOf(x.t)}] ${x.caption || 'shared screen'}`).join('\n')}` : '',
   ].filter(Boolean).join('\n')
   const tr = source ? str(source.transcript) : ''
   return `You do one action item from the user's Meeting Notebook${me ? ` (the user is ${me})` : ''}. Write the deliverable itself, in Markdown: the email, message, document or plan, ready for the user to use. Start with one line saying what it is (for example "Email to Lena Varga"), then the deliverable. Nothing is sent: the user reads it first.
@@ -197,9 +221,10 @@ export function apply(ctx) {
     const lines = allNotes().sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((n) => {
       const open = (n.actions || []).filter((a) => !a.done).length
       const one = (s) => String(s || '').replace(/[|\n\r]+/g, ' ').trim()
-      return `${n.id} | ${n.date || ''} | ${one(n.title).slice(0, 100)} | ${one(n.type)} › ${one(n.group)} | ${(n.attendees || []).slice(0, 10).map(one).join(', ')} | ${open} open`
+      const sc = (n.screens || []).length
+      return `${n.id} | ${n.date || ''} | ${one(n.title).slice(0, 100)} | ${one(n.type)} › ${one(n.group)} | ${(n.attendees || []).slice(0, 10).map(one).join(', ')} | ${open} open${sc ? ` | ${sc} screens` : ''}`
     })
-    ctx.store.write('index.md', `# Meeting Notebook index\n\nOne line a page, newest first. Each page is notes/<id>.json beside this file.\nid | date | title | type › group | attendees | open actions\n\n${lines.join('\n')}\n`)
+    ctx.store.write('index.md', `# Meeting Notebook index\n\nOne line a page, newest first. Each page is notes/<id>.json beside this file.\nid | date | title | type › group | attendees | open actions | shared screens (when the call had any; listed in the page's \`screens\`)\n\n${lines.join('\n')}\n`)
     indexDirty = false
   }
   ctx.every(30, () => { if (indexDirty) writeIndex() })
@@ -274,6 +299,7 @@ export function apply(ctx) {
         updatedAt: now,
         filedAt: now,
         model: out.model || '',
+        screens: parseScreens(source.text),
         reviewed: old ? (toReview ? false : old.reviewed !== false) : false,
       }
       if (toReview) n.review = { at: now, changes, proposed }
@@ -333,6 +359,19 @@ export function apply(ctx) {
     }
     if (tidy) writeJson('filed.json', f)
   }
+
+  // Pages filed before screens were kept: their "On screen" lines are read from the call's minutes, a few
+  // pages every 30 s. Also picks up a folder Echo renamed (the page follows it).
+  ctx.every(30, () => {
+    const todo = allNotes().filter((n) => n.call && !Array.isArray(n.screens)).slice(0, 8)
+    for (const n of todo) {
+      const found = findCall(n.call)
+      const cur = getNote(n.id); if (!cur) continue
+      cur.screens = found ? parseScreens(found.source.text) : []
+      if (found && found.call !== n.call) { cur.call = found.call; cur.link = `echo://call/${found.call}` }
+      putNote(cur)
+    }
+  })
 
   /** Echo's recent calls and memos, each with what the notebook has of it. */
   const recentCalls = () => {
