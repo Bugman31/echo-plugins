@@ -362,16 +362,22 @@ export function apply(ctx) {
 
   // Pages filed before screens were kept: their "On screen" lines are read from the call's minutes, a few
   // pages every 30 s. Also picks up a folder Echo renamed (the page follows it).
-  ctx.every(30, () => {
-    const todo = allNotes().filter((n) => n.call && !Array.isArray(n.screens)).slice(0, 8)
+  const addScreens = (limit, all) => {
+    const todo = allNotes().filter((n) => n.call && (all || !Array.isArray(n.screens))).slice(0, limit)
+    let hits = 0
     for (const n of todo) {
       const found = findCall(n.call)
       const cur = getNote(n.id); if (!cur) continue
       cur.screens = found ? parseScreens(found.source.text) : []
       if (found && found.call !== n.call) { cur.call = found.call; cur.link = `echo://call/${found.call}` }
       putNote(cur)
+      if (cur.screens.length) hits++
     }
-  })
+    return { pages: todo.length, withScreens: hits }
+  }
+  ctx.every(30, () => { addScreens(8, false) })
+  // All pages now (from the CLI, or to read the captions again after Echo rewrote minutes): `{all: true}` redoes every page.
+  ctx.command('screens', (a) => { const r = addScreens(100000, !!(a && a.all)); writeIndex(); return r })
 
   /** Echo's recent calls and memos, each with what the notebook has of it. */
   const recentCalls = () => {
