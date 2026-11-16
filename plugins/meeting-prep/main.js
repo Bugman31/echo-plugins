@@ -133,6 +133,12 @@ export function apply(ctx) {
       const out = await ctx.claude.run({ title: only ? `Prep: ${str(only.subject)}`.slice(0, 80) : `Meeting prep ${date}`, prompt, tools: connectors ? 'folder' : 'read', dir: `runs/${stamp()}` })
       prune()
       const got = cleanPrep(parseAnswer(out.answer), date, md)
+      // No calendar = no meetings to brief: say why instead of saving an empty day over a good one.
+      if (!got.meetings.length && /not available|unavailable|no .*calendar tool/i.test(got.sources.calendar || '')) {
+        throw new Error(connectors
+          ? "Claude Code couldn't reach your calendar: its claude.ai connectors (Microsoft 365, EPAM CRM) weren't available in this run. Sign in again with `claude auth login --claudeai` in Terminal. A `claude setup-token` token can't use connectors, so don't set CLAUDE_CODE_OAUTH_TOKEN for Echo."
+          : "Claude Code couldn't read your calendar through Echo (`echoctl calendar events`).")
+      }
       let rec
       if (only) {
         // One meeting: replace its entry in the day (by event id, else title), or add it.
@@ -145,7 +151,7 @@ export function apply(ctx) {
         meetings.sort((a, b) => (a.start || '99').localeCompare(b.start || '99'))
         rec = { ...cur, date, meetings, state: cur.state === 'running' ? 'running' : 'done', at: cur.at || new Date().toISOString(), sources: { ...(cur.sources || {}), ...got.sources } }
       } else {
-        rec = { ...got, state: 'done', at: new Date().toISOString(), model: out.model || '', auto: prev.auto || why === 'schedule' }
+        rec = { ...got, state: 'done', at: new Date().toISOString(), model: out.model || '', auto: prev.auto || why === 'schedule', warning: '' }
       }
       writeJson(`prep/${date}.json`, rec)
       if (!only && why === 'schedule' && setting('send', true) !== false && teamsReady() && rec.meetings.length) {
@@ -153,7 +159,11 @@ export function apply(ctx) {
       }
       return rec
     } catch (e) {
-      if (!only) writeJson(`prep/${date}.json`, { ...prev, date, state: 'failed', at: new Date().toISOString(), error: String((e && e.message) || e), auto: prev.auto || why === 'schedule' })
+      const error = String((e && e.message) || e)
+      // A brief that was made stays: the failed run is only noted on it.
+      if (!only) writeJson(`prep/${date}.json`, prev.state === 'done' && (prev.meetings || []).length
+        ? { ...prev, warning: `Preparing again failed at ${new Date().toLocaleTimeString()}: ${error}` }
+        : { ...prev, date, state: 'failed', at: new Date().toISOString(), error, auto: prev.auto || why === 'schedule' })
       throw e
     } finally {
       running.delete(key)

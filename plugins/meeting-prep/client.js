@@ -83,6 +83,7 @@ const CSS = `
 .mprep .mp-shot figcaption .mp-at{border:0;background:none;padding:0 6px 0 0;font:inherit;font-weight:700;color:var(--link);cursor:pointer}
 .mprep .mp-lightbox{position:fixed;inset:0;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;z-index:70;cursor:zoom-out;padding:16px}
 .mprep .mp-lightbox img{max-width:96vw;max-height:94vh;border-radius:6px;background:#fff}
+.mprep .mp-warn{color:var(--danger,#e5484d);font-size:13px}
 .mprep .mp-used{display:flex;flex-wrap:wrap;gap:6px}
 .mprep .mp-used span{font-size:11.5px;color:var(--muted);padding:2px 10px;border-radius:100px;border:1px solid var(--rule)}
 .mprep .mp-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:8px 14px;border-radius:5px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60}
@@ -153,7 +154,7 @@ export function apply(ctx) {
     const status = busy() ? '<span class="mp-state">Claude is preparing…</span>' : `<button class="mp-pill" data-mp-run>${r.state === 'done' ? 'Refresh' : 'Prepare'}</button>`
     const sub = r.summary || (r.state === 'done' ? `${ms.length} meeting${ms.length === 1 ? '' : 's'}.` : '')
     const prepared = r.state === 'done' && r.at ? ` Prepared ${new Date(r.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}.` : ''
-    const list = `<header class="mp-band"><p class="mp-lbl">${esc(longDay(date))}${isToday ? ' · today' : ''}</p><h1>Meeting prep</h1>${sub || prepared ? `<p>${esc(sub)}${esc(prepared)}</p>` : ''}
+    const list = `<header class="mp-band"><p class="mp-lbl">${esc(longDay(date))}${isToday ? ' · today' : ''}</p><h1>Meeting prep</h1>${sub || prepared ? `<p>${esc(sub)}${esc(prepared)}</p>` : ''}${r.warning ? `<p class="mp-warn">${esc(r.warning)}</p>` : ''}
         <div class="mp-bar">${status}<button class="mp-pill nav" data-mp-day="-1" aria-label="Previous day">‹</button><button class="mp-pill nav" data-mp-day="1" aria-label="Next day">›</button>${isToday ? '' : '<button class="mp-pill nav" data-mp-day="0">Today</button>'}</div></header>` +
       (ms.length ? ms.map((m, i) => {
         const chips = [m.you_owe && '<span class="mp-chip warn">You owe</span>', m.they_owe && '<span class="mp-chip">They owe</span>', m.crm && !/^no opportunity/i.test(m.crm) && '<span class="mp-chip">In CRM</span>', firstMeeting(m) && '<span class="mp-chip">First meeting</span>'].filter(Boolean).join('')
