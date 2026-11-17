@@ -88,6 +88,7 @@ export function cleanPage(p, fallback) {
     actions,
     myNotes: str(p.myNotes),
     eventId: str(p.eventId).trim(),
+    internal: p.internal === true,
   }
 }
 
@@ -147,11 +148,18 @@ Do not change anything.
 The user is ${me ? `“${me}”` : 'the speaker called “Me” in the transcript'}.
 
 Answer in exactly this shape:
-{"type":"","group":"","title":"","date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","eventId":"","attendees":[],"summary":"HTML","decisions":[],"actions":[{"text":"","owner":"","due":"YYYY-MM-DD or empty","mode":"claude or manual","prompt":"","how":"","echoId":"","t":0}],"myNotes":"HTML"}
+{"type":"","group":"","internal":false,"title":"","date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","eventId":"","attendees":[],"summary":"HTML","decisions":[],"actions":[{"text":"","owner":"","due":"YYYY-MM-DD or empty","mode":"claude or manual","prompt":"","how":"","echoId":"","t":0}],"myNotes":"HTML"}
 
 How to fill it:
-- type: one of ${TYPES.map((t) => `“${t}”`).join(', ')}, or a folder the notebook already has. Client = a call with a client or prospect's people. Partner = a technology or alliance partner. 1:1 = just the user and one colleague. Internal = colleagues only, more than two. Industry & Analyst = analysts, industry bodies, conferences. A memo (only the user speaking) is Other.
-- group: the client or partner organisation (Client, Partner), the other person's full name (1:1), or the meeting series or topic (Internal and the rest). Reuse a subfolder name below exactly when it is the same client, person or series.
+- type: one of ${TYPES.map((t) => `“${t}”`).join(', ')}, or a folder the notebook already has. File by what the call is about, not only by who was on it:
+  - Client = about one client or prospect: a call with their people, and also a call among colleagues only about that account (prep, an RFP or bid, a proposal, a POC, a deal review, an account sync).
+  - Partner = about one technology or alliance partner, the same way.
+  - Industry & Analyst = analysts (Gartner, IDC, Forrester, Everest…), analyst briefings and their prep, industry bodies, conferences.
+  - 1:1 = just the user and one colleague, when it isn't about one client or partner.
+  - Internal = colleagues only, more than two, not about one client or partner: teams, programmes, offerings, practices, operating rhythm, hiring.
+  - A memo (only the user speaking) is Other.
+- group: the client or partner organisation (Client, Partner, named as the company is known, like “Edward Jones”, not a project name), the other person's full name (1:1), or the meeting series or topic (Internal and the rest). Reuse a subfolder name below exactly when it is the same client, person or series.
+- internal: true when the call is filed under Client or Partner but only colleagues were on it (prep, internal deal review); false otherwise.
 - title: the invite's subject, else a short plain title. date, start and end: from the invite, else from the call. eventId: the invite's id, else empty.
 - attendees: full names, the user included.
 - summary: HTML using only <p>, <h4>, <ul>, <li>, <b>, <i>, <mark>. First <p>: one sentence on what the meeting was for. Then <h4>Highlights</h4> and a <ul> of 3 to 7 items, each starting with a bold topic, like <li><b>Pipeline:</b> what was said, with names and numbers. [12:34]</li>. Then <h4>Risks &amp; issues</h4> with its <ul> only when there are any. End each item with the moment it comes from as [mm:ss] (or [h:mm:ss]) when you know it; Echo's minutes carry these times. Wrap a key date or deadline in <mark> (at most three).
@@ -300,6 +308,8 @@ export function apply(ctx) {
         filedAt: now,
         model: out.model || '',
         screens: parseScreens(source.text),
+        // The folder is the user's once they moved the page: its label stays with it.
+        internal: old && (old.touched || []).some((f) => f === 'type' || f === 'group') ? !!old.internal : page.internal,
         reviewed: old ? (toReview ? false : old.reviewed !== false) : false,
       }
       if (toReview) n.review = { at: now, changes, proposed }

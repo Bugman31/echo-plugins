@@ -80,6 +80,7 @@ const CSS = `
 .mnb .nb-empty b{color:var(--ink)}
 .mnb .nb-page{background:var(--sheet);border-right:0}
 .mnb .nb-sheet{max-width:clamp(760px,72vw,1500px);margin:0 auto;padding-block:28px 64px;padding-inline:clamp(16px,4vw,44px)}
+.mnb .nb-itag{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:2px 9px;border-radius:100px;border:1px solid var(--rule);color:var(--muted);margin-left:6px}
 .mnb .nb-crumbs{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;color:var(--muted);margin-bottom:10px}
 .mnb .nb-chip{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:999px;background:var(--hover);font-size:12px}
 .mnb .nb-chip .nb-sw{width:7px;height:7px;border-radius:50%;background:var(--c,var(--t-other))}
@@ -1068,7 +1069,7 @@ export function apply(ctx) {
     const busy = n.call && filed[n.call] && filed[n.call].state === 'filing'
     s.innerHTML = `${reviewHtml(n)}
   <button class="nb-back" id="nb-back2">‹ ${esc(n.group || 'Back')}</button>
-  <div class="nb-crumbs"><span class="nb-chip" style="--c:${colorOf(n.type)}"><span class="nb-sw"></span>${esc(n.type || 'Other')}</span><span>›</span><button class="nb-crumbg" data-nb-gopen="1">${esc(n.group || 'General')}</button><span>›</span><span>${esc(fmtDate(n.date))}${n.start ? ' · ' + esc(n.start) + (n.end ? '–' + esc(n.end) : '') : ''}</span></div>
+  <div class="nb-crumbs"><span class="nb-chip" style="--c:${colorOf(n.type)}"><span class="nb-sw"></span>${esc(n.type || 'Other')}</span><span>›</span><button class="nb-crumbg" data-nb-gopen="1">${esc(n.group || 'General')}</button><span>›</span><span>${esc(fmtDate(n.date))}${n.start ? ' · ' + esc(n.start) + (n.end ? '–' + esc(n.end) : '') : ''}</span>${n.internal ? '<span class="nb-itag" title="Only colleagues were on this call">Internal call</span>' : ''}</div>
   <input class="nb-ttl" id="nb-f-title" value="${esc(n.title || '')}" placeholder="Untitled meeting" aria-label="Title">
   <div class="nb-meta">
     <div class="nb-field"><label for="nb-f-type">Type</label><span class="nb-cb"><input id="nb-f-type" autocomplete="off" value="${esc(n.type || '')}"><button class="nb-cb-btn" tabindex="-1" aria-label="Show folders">▼</button></span></div>
