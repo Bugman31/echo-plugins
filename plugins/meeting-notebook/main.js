@@ -136,7 +136,7 @@ export function merge(old, fresh) {
 export function filingPrompt({ call, source, me, folders }) {
   const transcript = str(source.transcript)
   const cut = transcript.length > MAX_TRANSCRIPT ? transcript.slice(0, MAX_TRANSCRIPT) + '\n[… the rest of the transcript is left out]' : transcript
-  const known = folders.length ? folders.map((f) => `- ${f.type}: ${f.groups.length ? f.groups.join(' · ') : '(no subfolders yet)'}`).join('\n') : '(empty notebook)'
+  const known = folders.length ? folders.map((f) => `- ${f.type}${TYPES.includes(f.type) ? '' : ' (the user\'s own folder)'}: ${f.groups.length ? f.groups.join(' · ') : '(no subfolders yet)'}`).join('\n') : '(empty notebook)'
   return `You file one recorded call as a page of the user's Meeting Notebook. Answer with JSON only, no other text.
 
 The call is Echo's folder \`calls/${call}/\` in the data folder. Read these if they are there (read-only; skip any that is missing):
@@ -155,8 +155,9 @@ How to fill it:
   - Client = about one client or prospect: a call with their people, and also a call among colleagues only about that account (prep, an RFP or bid, a proposal, a POC, a deal review, an account sync).
   - Partner = about one technology or alliance partner, the same way.
   - Industry & Analyst = analysts (Gartner, IDC, Forrester, Everest…), analyst briefings and their prep, industry bodies, conferences.
-  - 1:1 = just the user and one colleague, when it isn't about one client or partner.
-  - Internal = colleagues only, more than two, not about one client or partner: teams, programmes, offerings, practices, operating rhythm, hiring.
+  - A folder of the user's own (any folder below that isn't one of the standard ones) wins whenever the call belongs to it: its team, programme or series, or a 1:1 with someone who has a subfolder there (a 1:1 with a person listed under such a folder goes into that folder, under their name).
+  - 1:1 = just the user and one colleague, when no folder above fits.
+  - Internal = the last resort: colleagues only, more than two, and no other folder fits (teams, programmes, offerings, practices, operating rhythm, hiring).
   - A memo (only the user speaking) is Other.
 - group: the client or partner organisation (Client, Partner, named as the company is known, like “Edward Jones”, not a project name), the other person's full name (1:1), or the meeting series or topic (Internal and the rest). Reuse a subfolder name below exactly when it is the same client, person or series.
 - internal: true when the call is filed under Client or Partner but only colleagues were on it (prep, internal deal review); false otherwise.
@@ -179,6 +180,25 @@ ${str(source.text) || '(none yet)'}
 
 TRANSCRIPT:
 ${cut || '(none)'}
+`
+}
+
+/** The prompt for proposing folders for similar Internal pages (no tools: the pages are in the prompt). */
+export function suggestPrompt({ pages, folders, dismissed }) {
+  return `The user's Meeting Notebook files meetings in folders (each with subfolders). "Internal" is meant as the last resort, but it has filled up. Propose new top-level folders for groups of similar Internal meetings: a team, programme, practice, region or kind of meeting the user meets about again and again. Answer with JSON only, no other text.
+
+Rules:
+- Each proposal gathers whole Internal subfolders (named exactly as below) that belong together, at least 3 pages in all. A subfolder is in one proposal at most.
+- A short folder name (1 to 3 words) that the user would recognise, like "Applied AI team" or "Regions & BUs". Not the name of a folder the notebook already has, and not "Internal", "Other" or "General".
+- Leave one-off meetings where they are. At most 5 proposals, the strongest first. None at all is a fine answer.
+${dismissed.length ? `- The user turned these down before; don't propose them again: ${dismissed.join('; ')}.\n` : ''}
+Answer in exactly this shape:
+{"items":[{"folder":"","groups":[""],"why":"one short sentence"}]}
+
+FOLDERS NOW: ${folders.join(', ')}
+
+INTERNAL PAGES (subfolder | date | title | what it was about):
+${pages.join('\n')}
 `
 }
 
@@ -389,6 +409,78 @@ export function apply(ctx) {
   // All pages now (from the CLI, or to read the captions again after Echo rewrote minutes): `{all: true}` redoes every page.
   ctx.command('screens', (a) => { const r = addScreens(100000, !!(a && a.all)); writeIndex(); return r })
 
+  // Folder suggestions: when Internal fills up with similar meetings, Claude proposes folders for them
+  // (suggestions.json {at, count, items[{folder, groups[], pages, why, state: new|applied|dismissed}]}).
+  // Checked hourly: again once Internal has 5 more pages than at the last look.
+  const suggestions = () => readJson('suggestions.json', { at: '', count: 0, items: [] })
+  const internalPages = () => allNotes().filter((n) => (n.type || 'Other') === 'Internal')
+  let suggesting = false
+  const suggest = async () => {
+    if (suggesting) throw new Error('folder suggestions are being made already')
+    suggesting = true
+    try {
+      const pages = internalPages()
+      const lines = pages.sort((a, b) => (a.group || '').localeCompare(b.group || '') || (a.date || '').localeCompare(b.date || ''))
+        .map((n) => `${(n.group || 'General').replace(/\|/g, ' ')} | ${n.date || ''} | ${str(n.title).replace(/\n/g, ' ').slice(0, 90)} | ${plainText(n.summary).split('\n')[0].slice(0, 160)}`)
+      const old = suggestions()
+      const dismissed = old.items.filter((x) => x.state === 'dismissed').map((x) => `${x.folder} (${x.groups.join(', ')})`)
+      const known = new Set(folders().map((f) => f.type.toLowerCase()))
+      const out = await ctx.claude.run({ title: 'Notebook: folder suggestions', prompt: suggestPrompt({ pages: lines, folders: folders().map((f) => f.type), dismissed }), tools: 'none', dir: `runs/${stamp()}` })
+      prune()
+      const by = {}
+      for (const n of pages) { const g = n.group || 'General'; by[g] = (by[g] || 0) + 1 }
+      const used = new Set()
+      const items = (parseAnswer(out.answer).items || []).map((x) => {
+        const folder = str(x && x.folder).trim().slice(0, 40)
+        const groups = strs(x && x.groups).filter((g) => by[g] && !used.has(g))
+        groups.forEach((g) => used.add(g))
+        return { folder, groups, pages: groups.reduce((t, g) => t + by[g], 0), why: str(x && x.why).trim().slice(0, 200), state: 'new' }
+      }).filter((x) => x.folder && !known.has(x.folder.toLowerCase()) && !/^(internal|other|general)$/i.test(x.folder) && x.pages >= 3).slice(0, 5)
+      const rec = { at: new Date().toISOString(), count: pages.length, items: [...items, ...old.items.filter((x) => x.state === 'dismissed')] }
+      writeJson('suggestions.json', rec)
+      return rec
+    } finally { suggesting = false }
+  }
+  ctx.every(3600, () => {
+    const n = internalPages().length, s = suggestions()
+    if (n >= 8 && n >= (s.count || 0) + 5) suggest().catch((e) => ctx.log('suggest', (e && e.message) || e))
+  })
+  /** Make a suggested (or any) folder: the Internal subfolders named move into it, each kept as a subfolder. */
+  const makeFolder = ({ folder, groups }) => {
+    folder = str(folder).trim().slice(0, 40)
+    if (!folder || /^(internal|other|general)$/i.test(folder)) throw new Error('give the folder a name')
+    const gs = new Set(strs(groups))
+    let moved = 0
+    const now = new Date().toISOString()
+    for (const n of internalPages()) {
+      if (!gs.has(n.group || 'General')) continue
+      const cur = getNote(n.id); if (!cur) continue
+      cur.type = folder
+      cur.touched = [...new Set([...(cur.touched || []), 'type'])]
+      cur.updatedAt = now
+      putNote(cur); moved++
+    }
+    const meta = readJson('meta.json', {})
+    const order = (meta.typeOrder || []).filter((t) => t !== folder)
+    const at = order.indexOf('Internal')
+    if (at < 0) order.push(folder); else order.splice(at, 0, folder)
+    meta.typeOrder = order
+    writeJson('meta.json', meta)
+    const s = suggestions()
+    for (const x of s.items) if (x.folder === folder && x.state === 'new') x.state = 'applied'
+    writeJson('suggestions.json', s)
+    return { moved }
+  }
+  ctx.command('suggest_folders', () => { suggest().catch((e) => ctx.log('suggest', (e && e.message) || e)); return { started: true } })
+  ctx.command('suggest_folders_wait', () => suggest())
+  ctx.command('make_folder', (a) => makeFolder(a || {}))
+  ctx.command('dismiss_folder', ({ folder }) => {
+    const s = suggestions()
+    for (const x of s.items) if (x.folder === folder && x.state === 'new') x.state = 'dismissed'
+    writeJson('suggestions.json', s)
+    return true
+  })
+
   /** Echo's recent calls and memos, each with what the notebook has of it. */
   const recentCalls = () => {
     let list = []
@@ -416,6 +508,7 @@ export function apply(ctx) {
     running: [...running],
     me: setting('me', ''),
     deliver: deliverKinds(),
+    suggestions: suggestions().items.filter((x) => x.state === 'new'),
   }))
   ctx.command('calls', () => recentCalls())
 

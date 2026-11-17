@@ -80,6 +80,12 @@ const CSS = `
 .mnb .nb-empty b{color:var(--ink)}
 .mnb .nb-page{background:var(--sheet);border-right:0}
 .mnb .nb-sheet{max-width:clamp(760px,72vw,1500px);margin:0 auto;padding-block:28px 64px;padding-inline:clamp(16px,4vw,44px)}
+.mnb .nb-tips{grid-column:1/-1}
+.mnb .nb-tnote{margin:0 0 6px;font-size:13px;color:var(--muted)}
+.mnb .nb-tip{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 16px;align-items:center;padding:12px 0;border-top:1px solid var(--rule)}
+.mnb .nb-tip .t{font-size:12.5px;color:var(--muted)}
+.mnb .nb-tip .why{font-size:13px;margin-top:3px}
+@media (max-width:700px){.mnb .nb-tip{grid-template-columns:1fr}}
 .mnb .nb-itag{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:2px 9px;border-radius:100px;border:1px solid var(--rule);color:var(--muted);margin-left:6px}
 .mnb .nb-crumbs{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;color:var(--muted);margin-bottom:10px}
 .mnb .nb-chip{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:999px;background:var(--hover);font-size:12px}
@@ -494,6 +500,7 @@ export function apply(ctx) {
   }
 
   const frameCache = {}, framesLoading = {}
+  let folderTips = []
   let notes = {}, filed = {}, filingNow = [], runningNow = [], deliver = [], me = '', loaded = false, lastLoad = 0, loading = null
   const sel = { kind: 'today', type: null, id: null, gview: null }
   const openGroups = new Set()
@@ -559,6 +566,7 @@ export function apply(ctx) {
       filingNow = (v && v.filing) || []
       runningNow = (v && v.running) || []
       deliver = (v && v.deliver) || []
+      folderTips = (v && v.suggestions) || []
       me = (v && v.me) || ''
       if (Date.now() >= metaQuietUntil) setMeta(v && v.meta)
       loaded = true; lastLoad = Date.now()
@@ -1398,6 +1406,9 @@ export function apply(ctx) {
       return `<button class="nb-crow2" style="grid-template-columns:minmax(0,1fr) auto" data-nb-open="${esc(n.id)}"><span><span class="nm" style="display:block;font-weight:500">${esc(n.title || 'Untitled')}</span><span class="t">${rv ? `Filed again · ${rv} change${rv > 1 ? 's' : ''} to review` : `${hl} highlight${hl === 1 ? '' : 's'} · ${dec} decision${dec === 1 ? '' : 's'} · ${ac} action${ac === 1 ? '' : 's'}`}</span></span><span class="t">${esc(fmtDate(n.date))}</span></button>`
     }).join('') : '<div class="nb-tempty">Nothing new. Pages Claude files show here until you open them.</div>'
     const dueHtml = due.length ? due.slice(0, 10).map(({ n, a, i }) => `<div class="nb-ai" style="padding:11px 0"><input type="checkbox" aria-label="Mark done" data-nb-done="${esc(n.id)}|${i}"><div class="tx">${esc(a.text)}</div><div class="mt"><span>${esc(a.owner || 'No owner')}</span><span class="${a.due < td ? 'od' : ''}">${a.due < td ? 'overdue since ' : 'due '}${esc(fmtDate(a.due))}</span>${a.mode === 'claude' ? `<button data-nb-trun="${esc(n.id)}|${i}">Run with Claude</button>` : ''}<button data-nb-open="${esc(n.id)}">${esc(n.title || 'Open page')}</button></div></div>`).join('') : '<div class="nb-tempty">Nothing due in the next 7 days.</div>'
+    const tipHtml = folderTips.length ? `<section class="nb-card nb-tips" aria-label="Folder suggestions"><h2><span class="nb-lbl">New folders for Internal</span><span class="nb-tag">${folderTips.length}</span></h2>
+      <p class="nb-tnote">Internal is the last resort. These meetings come up again and again, so they could have folders of their own.</p>
+      ${folderTips.map((x, i) => `<div class="nb-tip"><div><b>${esc(x.folder)}</b> <span class="t">· ${x.pages} page${x.pages === 1 ? '' : 's'}</span><div class="t">${esc(x.groups.join(' · '))}</div>${x.why ? `<div class="why">${esc(x.why)}</div>` : ''}</div><div class="nb-bar"><button class="nb-pill pri" data-nb-tipmake="${i}">Make folder</button><button class="nb-pill" data-nb-tipno="${i}">Not now</button></div></div>`).join('')}</section>` : ''
     const day = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
     const html = `<div class="nb-today">
   <header class="nb-tband"><div style="display:flex;flex-direction:column;gap:6px"><p class="nb-lbl">${esc(day)}</p><h1>Today</h1></div>
@@ -1406,12 +1417,23 @@ export function apply(ctx) {
     <section class="nb-card" aria-label="Today's calls"><h2><span class="nb-lbl">Today's calls</span></h2>${rows.length ? rows.map((r) => r.html).join('') : '<div class="nb-tempty">No calls recorded today. Arm Echo for a call, or file one you have with <b>File an Echo call</b>.</div>'}</section>
     <section class="nb-card" aria-label="Filed by Claude, not opened yet"><h2><span class="nb-lbl">Filed by Claude · not opened yet</span>${un.length ? `<span class="nb-tag">${un.length} new</span>` : ''}</h2>${unHtml}</section>
     <section class="nb-card" aria-label="Due soon"><h2><span class="nb-lbl">Due soon</span></h2>${dueHtml}</section>
+    ${tipHtml}
   </div></div>`
     if (tb._html !== html) { tb.innerHTML = html; tb._html = html }
   }
   function bindToday(tb) {
     tb.addEventListener('click', (e) => {
       const f = e.target.closest('[data-nb-cfile]'); if (f) { e.stopPropagation(); fileCall(f.dataset.nbCfile); todayAt = 0; setTimeout(() => refreshToday(true), 1500); return }
+      const tm = e.target.closest('[data-nb-tipmake],[data-nb-tipno]')
+      if (tm) {
+        const make = tm.dataset.nbTipmake !== undefined, x = folderTips[+(make ? tm.dataset.nbTipmake : tm.dataset.nbTipno)]
+        if (!x) return
+        tm.disabled = true
+        ctx.call(make ? 'make_folder' : 'dismiss_folder', make ? { folder: x.folder, groups: x.groups } : { folder: x.folder })
+          .then((r) => { toast(make ? `Made ${x.folder}: ${r.moved} page${r.moved === 1 ? '' : 's'} moved` : 'Suggestion dismissed'); folderTips = folderTips.filter((y) => y !== x); load() })
+          .catch((err) => { tm.disabled = false; toast("Couldn't: " + (err.message || err)) })
+        return
+      }
       const r = e.target.closest('[data-nb-trun]'); if (r) { const [id, i] = r.dataset.nbTrun.split('|'); openPage(id); openRun(id, +i); return }
       const o = e.target.closest('[data-nb-open]'); if (o) openPage(o.dataset.nbOpen)
     })
