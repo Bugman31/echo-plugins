@@ -80,6 +80,24 @@ const CSS = `
 .mnb .nb-empty b{color:var(--ink)}
 .mnb .nb-page{background:var(--sheet);border-right:0}
 .mnb .nb-sheet{max-width:clamp(760px,72vw,1500px);margin:0 auto;padding-block:28px 64px;padding-inline:clamp(16px,4vw,44px)}
+.nb-set .nb-set-list{display:flex;flex-direction:column;gap:10px;margin:10px 0}
+.nb-set .nb-set-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:6px 8px;align-items:center;padding:10px;border:1px solid var(--line);border-radius:8px}
+.nb-set .nb-set-n{font-size:12px;color:var(--muted);text-align:center}
+.nb-set .nb-set-means{grid-column:2/-1;width:100%;box-sizing:border-box;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:inherit;resize:vertical}
+.nb-set input[type=text],.nb-set input:not([type]),.nb-set input[type=number],.nb-set select,.nb-set .nb-set-extra{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:inherit;min-width:0}
+.nb-set input[type=number]{width:64px}
+.nb-set .nb-set-ctl{display:flex;gap:4px}
+.nb-set .nb-set-ctl .btn{padding:3px 9px;min-width:0}
+.nb-set .nb-set-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.nb-set .nb-set-line{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}
+.nb-set .nb-set-line.col{flex-direction:column;align-items:stretch}
+.nb-set .nb-set-extra{width:100%;box-sizing:border-box;resize:vertical}
+.nb-set .nb-set-chk{display:flex;gap:10px;align-items:flex-start;margin:12px 0;cursor:pointer}
+.nb-set .nb-set-chk input{margin-top:3px}
+.nb-set .nb-set-chk .set-sub{display:block}
+.nb-set .nb-set-prev summary{cursor:pointer;font-size:13px;margin:10px 0 6px}
+.nb-set .nb-set-prev pre{white-space:pre-wrap;font-size:11.5px;line-height:1.5;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px 12px;max-height:340px;overflow:auto}
+@media (max-width:640px){.nb-set .nb-set-row{grid-template-columns:22px minmax(0,1fr)}.nb-set .nb-set-row select,.nb-set .nb-set-ctl{grid-column:2}}
 .mnb .nb-tips{grid-column:1/-1}
 .mnb .nb-tnote{margin:0 0 6px;font-size:13px;color:var(--muted)}
 .mnb .nb-tip{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 16px;align-items:center;padding:12px 0;border-top:1px solid var(--rule)}
@@ -500,7 +518,7 @@ export function apply(ctx) {
   }
 
   const frameCache = {}, framesLoading = {}
-  let folderTips = []
+  let folderTips = [], folderNames = []
   let notes = {}, filed = {}, filingNow = [], runningNow = [], deliver = [], me = '', loaded = false, lastLoad = 0, loading = null
   const sel = { kind: 'today', type: null, id: null, gview: null }
   const openGroups = new Set()
@@ -515,7 +533,7 @@ export function apply(ctx) {
     return hay.includes(q)
   }
   function types() {
-    const base = meta.typeOrder || TYPE_ORDER.slice(0, 5)
+    const base = meta.typeOrder || (folderNames.length ? folderNames : TYPE_ORDER.slice(0, 5))
     const s = new Set(base); allNotes().forEach((n) => n.type && s.add(n.type))
     return [...s].sort((a, b) => { const ia = base.indexOf(a), ib = base.indexOf(b); return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || a.localeCompare(b) })
   }
@@ -567,6 +585,7 @@ export function apply(ctx) {
       runningNow = (v && v.running) || []
       deliver = (v && v.deliver) || []
       folderTips = (v && v.suggestions) || []
+      folderNames = (v && v.folderNames) || []
       me = (v && v.me) || ''
       if (Date.now() >= metaQuietUntil) setMeta(v && v.meta)
       loaded = true; lastLoad = Date.now()
@@ -1600,4 +1619,94 @@ export function apply(ctx) {
   })
   if (ctx.palette) ctx.palette.add({ label: 'Open Meeting Notebook', group: 'Notebook', keywords: 'notes minutes pages folders', run: () => ctx.go(ACTIVITY) })
   if (ctx.palette) ctx.palette.add({ label: 'File an Echo call in the notebook…', group: 'Notebook', keywords: 'notebook file call', run: () => { ctx.go(ACTIVITY); setTimeout(openCalls, 200) } })
+
+  /* ---------- Settings → Meeting Notebook: the filing rules ---------- */
+  // One element kept across Echo's redraws of the Settings page (put back in its host after each), so what is
+  // being typed survives them.
+  const SUBL = { organisation: 'by organisation', person: 'by person', series: 'by series or topic' }
+  const rs = { rules: null, defaults: null, preview: '', status: '', dirty: false }
+  const setEl = document.createElement('div'); setEl.className = 'nb-set'
+  function loadRules() { return ctx.call('rules').then((r) => { rs.rules = r.rules; rs.defaults = r.defaults; rs.preview = r.preview; rs.dirty = false; drawRules() }).catch((e) => { rs.status = "Couldn't read the rules: " + (e.message || e); drawRules() }) }
+  function readRules() {
+    const q = (c) => setEl.querySelector(c)
+    const folders = [...setEl.querySelectorAll('.nb-set-row')].map((row) => ({ name: row.querySelector('.nb-set-name').value, means: row.querySelector('.nb-set-means').value, sub: row.querySelector('.nb-set-sub').value }))
+    return { folders, fallback: q('.nb-set-fb').value, topic: q('.nb-set-topic').checked, teamOneOnOnes: q('.nb-set-team').checked, extra: q('.nb-set-extra').value,
+      suggest: q('.nb-set-sug').checked, suggestAfter: +q('.nb-set-after').value, suggestMin: +q('.nb-set-min').value }
+  }
+  function drawRules() {
+    const r = rs.rules
+    if (!r) { setEl.innerHTML = '<p class="set-sub">Reading the filing rules…</p>'; return }
+    const f = document.activeElement && setEl.contains(document.activeElement) ? document.activeElement : null
+    const fKey = f ? [f.className, f.closest('.nb-set-row') ? f.closest('.nb-set-row').dataset.i : ''].join('|') : ''
+    const names = r.folders.map((x) => x.name)
+    if (!names.includes(r.fallback)) names.push(r.fallback)
+    const rows = r.folders.map((x, i) => `<div class="nb-set-row" data-i="${i}">
+        <span class="nb-set-n">${i + 1}</span>
+        <input class="nb-set-name" value="${esc(x.name)}" aria-label="Folder name" maxlength="40" placeholder="Folder name">
+        <select class="nb-set-sub" aria-label="Subfolders">${Object.keys(SUBL).map((k) => `<option value="${k}"${x.sub === k ? ' selected' : ''}>Subfolders ${SUBL[k]}</option>`).join('')}</select>
+        <span class="nb-set-ctl"><button class="btn" data-nb-rmove="-1" ${i ? '' : 'disabled'} aria-label="Move up">↑</button><button class="btn" data-nb-rmove="1" ${i < r.folders.length - 1 ? '' : 'disabled'} aria-label="Move down">↓</button><button class="btn" data-nb-rdel ${r.folders.length > 1 ? '' : 'disabled'} aria-label="Remove folder">✕</button></span>
+        <textarea class="nb-set-means" rows="2" maxlength="300" aria-label="What goes in ${esc(x.name)}" placeholder="What goes in this folder, in plain words">${esc(x.means)}</textarea>
+      </div>`).join('')
+    setEl.innerHTML = ctx.ui.setCard('Filing rules', [
+      `<p class="set-sub">How Claude picks a folder and subfolder when it files a call. It tries the folders in this order; the last-resort folder is used only when none fits. Folders you make in the notebook (like a team) count too. Changes apply to calls filed from now on.</p>`,
+      `<div class="nb-set-list">${rows}</div><div class="nb-set-bar"><button class="btn" data-nb-radd>+ Add folder</button></div>`,
+      `<div class="nb-set-line"><label for="nb-set-fb">Last-resort folder</label><select class="nb-set-fb" id="nb-set-fb">${names.map((n) => `<option${n === r.fallback ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></div>`,
+      `<label class="nb-set-chk"><input type="checkbox" class="nb-set-topic"${r.topic ? ' checked' : ''}><span>File a call among colleagues about one client or partner under that client or partner<span class="set-sub">Marked “Internal call” on the page. Off: such calls are filed by who was on them.</span></span></label>`,
+      `<label class="nb-set-chk"><input type="checkbox" class="nb-set-team"${r.teamOneOnOnes ? ' checked' : ''}><span>Put a 1:1 in the folder where that person already has a subfolder<span class="set-sub">For example a team folder with a subfolder per team member.</span></span></label>`,
+      `<div class="nb-set-line col"><label for="nb-set-extra">Your own rules <span class="set-sub">One per line, in plain words. They win over the rules above.</span></label><textarea class="nb-set-extra" id="nb-set-extra" rows="4" maxlength="2000" placeholder="Calls with Phil go to Client › and5&#10;Anything about hiring goes to Talent">${esc(r.extra)}</textarea></div>`,
+      `<label class="nb-set-chk"><input type="checkbox" class="nb-set-sug"${r.suggest ? ' checked' : ''}><span>Suggest new folders when the last-resort folder fills up with similar meetings<span class="set-sub">Shown on the notebook's Today view, to make or turn down.</span></span></label>
+       <div class="nb-set-line"><label>Look again after</label><input type="number" class="nb-set-after" min="1" max="100" value="${r.suggestAfter}"><span class="set-sub">new pages there; a new folder needs at least</span><input type="number" class="nb-set-min" min="2" max="50" value="${r.suggestMin}"><span class="set-sub">pages</span></div>`,
+      `<details class="nb-set-prev"><summary>What Claude is told</summary><pre>${esc(rs.preview)}</pre></details>`,
+      `<div class="nb-set-bar"><button class="btn primary" data-nb-rsave ${rs.dirty ? '' : 'disabled'}>Save</button><button class="btn" data-nb-rreset>Reset to the defaults</button><span class="set-sub nb-set-st">${esc(rs.status)}</span></div>`,
+    ])
+    if (fKey) { const [cls, i] = fKey.split('|'); const el = i ? setEl.querySelector(`.nb-set-row[data-i="${i}"] .${cls.split(' ')[0]}`) : setEl.querySelector('.' + cls.split(' ')[0]); if (el) el.focus() }
+  }
+  let prevT = null
+  function changed() {
+    rs.dirty = true; rs.status = 'Not saved yet'
+    const b = setEl.querySelector('[data-nb-rsave]'); if (b) b.disabled = false
+    const st = setEl.querySelector('.nb-set-st'); if (st) st.textContent = rs.status
+    clearTimeout(prevT)
+    prevT = setTimeout(() => ctx.call('preview_rules', { rules: readRules() }).then((p) => { rs.preview = p.preview; const pre = setEl.querySelector('.nb-set-prev pre'); if (pre) pre.textContent = p.preview }).catch(() => {}), 400)
+  }
+  setEl.addEventListener('input', changed)
+  setEl.addEventListener('change', (e) => { if (e.target.matches('.nb-set-name')) { rs.rules = readRules(); drawRules() } changed() })
+  setEl.addEventListener('click', async (e) => {
+    const b = e.target.closest('button'); if (!b || !rs.rules) return
+    if (b.dataset.nbRadd !== undefined) { rs.rules = readRules(); rs.rules.folders.push({ name: '', means: '', sub: 'series' }); drawRules(); changed(); const last = setEl.querySelector('.nb-set-row:last-child .nb-set-name'); if (last) last.focus(); return }
+    const row = b.closest('.nb-set-row')
+    if (row && b.dataset.nbRmove) { rs.rules = readRules(); const i = +row.dataset.i, j = i + +b.dataset.nbRmove; const fs = rs.rules.folders; [fs[i], fs[j]] = [fs[j], fs[i]]; drawRules(); changed(); return }
+    if (row && b.dataset.nbRdel !== undefined) { rs.rules = readRules(); rs.rules.folders.splice(+row.dataset.i, 1); drawRules(); changed(); return }
+    if (b.dataset.nbRsave !== undefined) {
+      b.disabled = true
+      try { const r = await ctx.call('set_rules', { rules: readRules() }); rs.rules = r.rules; rs.preview = r.preview; rs.dirty = false; rs.status = 'Saved. Calls filed from now on use these rules.' } catch (err) { rs.status = "Couldn't save: " + (err.message || err) }
+      drawRules(); return
+    }
+    if (b.dataset.nbRreset !== undefined) {
+      if (!rs.armReset) { rs.armReset = true; b.textContent = 'Click again to reset'; setTimeout(() => { rs.armReset = false; if (b.isConnected) b.textContent = 'Reset to the defaults' }, 4000); return }
+      rs.armReset = false
+      try { const r = await ctx.call('reset_rules'); rs.rules = r.rules; rs.preview = r.preview; rs.dirty = false; rs.status = 'Back to the defaults.' } catch (err) { rs.status = "Couldn't reset: " + (err.message || err) }
+      drawRules()
+    }
+  })
+  // The field being typed in, and where in it: a redraw takes the element out of the page (focus goes), so it is
+  // given back when the element is put back.
+  let lastF = null, lastSel = null
+  const keepSel = (e) => { const t = e.target; if (!setEl.contains(t)) return; lastF = t; try { lastSel = 'selectionStart' in t && t.selectionStart != null ? [t.selectionStart, t.selectionEnd] : null } catch { lastSel = null } }
+  ;['focusin', 'input', 'keyup', 'mouseup', 'select'].forEach((k) => setEl.addEventListener(k, keepSel))
+  setEl.addEventListener('focusout', (e) => { if (e.relatedTarget) lastF = null })
+  const placeRules = () => {
+    const host = document.querySelector('.nb-set-host')
+    if (!host || setEl.parentNode === host) return
+    host.appendChild(setEl)
+    const a = document.activeElement
+    if (lastF && setEl.contains(lastF) && (!a || a === document.body)) { lastF.focus(); if (lastSel) try { lastF.setSelectionRange(lastSel[0], lastSel[1]) } catch { /* not a text field */ } }
+  }
+  new MutationObserver(placeRules).observe(document.body, { childList: true, subtree: true })
+  if (ctx.settings && ctx.settings.section) ctx.settings.section({
+    id: 'rules',
+    label: 'Meeting Notebook',
+    icon: BOOK(18),
+    render() { if (!rs.rules && !rs.loading) { rs.loading = true; loadRules().finally(() => { rs.loading = false }) } setTimeout(placeRules, 0); return '<div class="nb-set-host"></div>' },
+  })
 }

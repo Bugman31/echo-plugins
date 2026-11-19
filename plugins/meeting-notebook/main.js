@@ -27,6 +27,70 @@ const TYPES = ['Client', 'Partner', '1:1', 'Internal', 'Industry & Analyst', 'Ot
 const KEEP_RUNS = 30
 const MAX_TRANSCRIPT = 120000
 
+// Filing rules (rules.json), set in Settings → Meeting Notebook. The defaults are the notebook's own rules.
+// folders, in priority order: {name, means, sub: organisation|person|series}; fallback = the last-resort folder.
+export const DEFAULT_RULES = {
+  folders: [
+    { name: 'Client', means: 'about one client or prospect: a call with their people', sub: 'organisation' },
+    { name: 'Partner', means: 'about one technology or alliance partner', sub: 'organisation' },
+    { name: 'Industry & Analyst', means: 'analysts (Gartner, IDC, Forrester, Everest…), analyst briefings and their prep, industry bodies, conferences', sub: 'organisation' },
+    { name: '1:1', means: 'just the user and one colleague', sub: 'person' },
+    { name: 'Internal', means: 'colleagues only, more than two: teams, programmes, offerings, practices, operating rhythm, hiring', sub: 'series' },
+  ],
+  fallback: 'Internal',
+  topic: true,
+  teamOneOnOnes: true,
+  extra: '',
+  suggest: true,
+  suggestAfter: 5,
+  suggestMin: 3,
+}
+const SUBS = { organisation: 'the organisation, named as the company is known (like “Edward Jones”), not a project', person: "the other person's full name", series: 'the meeting series or topic' }
+const name40 = (v) => str(v).replace(/[\n\r|]+/g, ' ').trim().slice(0, 40)
+/** Rules as saved, cleaned, with defaults for what's missing. */
+export function cleanRules(r) {
+  r = r && typeof r === 'object' ? r : {}
+  const seen = new Set()
+  let folders = (Array.isArray(r.folders) ? r.folders : DEFAULT_RULES.folders).map((f) => ({
+    name: name40(f && f.name), means: str(f && f.means).replace(/\s+/g, ' ').trim().slice(0, 300), sub: SUBS[f && f.sub] ? f.sub : 'series',
+  })).filter((f) => f.name && !/^other$/i.test(f.name) && !seen.has(f.name.toLowerCase()) && seen.add(f.name.toLowerCase())).slice(0, 16)
+  if (!folders.length) folders = DEFAULT_RULES.folders.map((f) => ({ ...f }))
+  const fallback = name40(r.fallback) || DEFAULT_RULES.fallback
+  const num = (v, d, lo, hi) => { const n = Math.round(Number(v)); return isFinite(n) && n >= lo && n <= hi ? n : d }
+  return {
+    folders, fallback,
+    topic: r.topic !== false, teamOneOnOnes: r.teamOneOnOnes !== false,
+    extra: str(r.extra).trim().slice(0, 2000),
+    suggest: r.suggest !== false, suggestAfter: num(r.suggestAfter, 5, 1, 100), suggestMin: num(r.suggestMin, 3, 2, 50),
+  }
+}
+/** The folder part of the filing prompt, from the rules. */
+export function rulesText(rules) {
+  const r = cleanRules(rules)
+  const listed = r.folders.filter((f) => f.name !== r.fallback)
+  const orgs = listed.filter((f) => f.sub === 'organisation').map((f) => f.name)
+  const lastOrg = listed.map((f) => f.sub).lastIndexOf('organisation')
+  const lines = []
+  if (r.teamOneOnOnes) lines.push("  - First: a 1:1 with someone who already has a subfolder in any folder other than 1:1 goes into that folder, under their name.")
+  listed.forEach((f, i) => {
+    lines.push(`  - ${f.name} = ${f.means || '(no description)'}.${r.topic && f.sub === 'organisation' ? ' Also a call among colleagues only about one of them (prep, an RFP or bid, a proposal, a POC, a deal review, an account sync).' : ''}`)
+    if (i === lastOrg || (lastOrg < 0 && i === -1)) lines.push("  - Then a folder of the user's own (marked “the user's own folder” below) whenever the call belongs to it: its team, programme or series.")
+  })
+  if (lastOrg < 0) lines.unshift("  - A folder of the user's own (marked “the user's own folder” below) whenever the call belongs to it: its team, programme or series.")
+  const fb = r.folders.find((f) => f.name === r.fallback)
+  lines.push(`  - ${r.fallback} = the last resort, only when no folder above fits${fb && fb.means ? ` (${fb.means})` : ''}.`)
+  lines.push('  - A memo (only the user speaking) is Other.')
+  const kinds = Object.keys(SUBS).map((k) => {
+    const names = r.folders.filter((f) => f.sub === k).map((f) => f.name)
+    if (k === 'series') names.push("the user's own folders")
+    return names.length ? `in ${names.join(', ')}: ${SUBS[k]}` : ''
+  }).filter(Boolean).join('; ')
+  return `- type: one of ${[...r.folders.map((f) => f.name), 'Other'].map((t) => `“${t}”`).join(', ')}, or a folder the notebook already has. File by what the call is about, not only by who was on it, trying these in order:
+${lines.join('\n')}${r.extra ? `\n  The user's own rules, which win over the ones above:\n${r.extra.split(/\n+/).map((l) => l.trim()).filter(Boolean).map((l) => `  - ${l.replace(/^[-*•]\s*/, '')}`).join('\n')}` : ''}
+- group (the subfolder): ${kinds}. Reuse a subfolder name below exactly when it is the same organisation, person or series.
+- internal: ${orgs.length && r.topic ? `true when the call is filed under ${orgs.join(', ')} but only colleagues were on it (prep, internal deal review); false otherwise` : 'false'}.`
+}
+
 const TRANSLIT = { а: 'a', б: 'b', в: 'v', г: 'g', ґ: 'g', д: 'd', е: 'e', ё: 'e', є: 'ie', ж: 'zh', з: 'z', и: 'i', і: 'i', ї: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'iu', я: 'ia' }
 export function slug(text) {
   const s = [...String(text).toLowerCase()].map((c) => (c in TRANSLIT ? TRANSLIT[c] : /[a-z0-9]/.test(c) ? c : '-')).join('')
@@ -133,10 +197,11 @@ export function merge(old, fresh) {
   return { page: out, changes, proposed }
 }
 
-export function filingPrompt({ call, source, me, folders }) {
+export function filingPrompt({ call, source, me, folders, rules }) {
+  const std = new Set([...cleanRules(rules).folders.map((f) => f.name), 'Other'])
   const transcript = str(source.transcript)
   const cut = transcript.length > MAX_TRANSCRIPT ? transcript.slice(0, MAX_TRANSCRIPT) + '\n[… the rest of the transcript is left out]' : transcript
-  const known = folders.length ? folders.map((f) => `- ${f.type}${TYPES.includes(f.type) ? '' : ' (the user\'s own folder)'}: ${f.groups.length ? f.groups.join(' · ') : '(no subfolders yet)'}`).join('\n') : '(empty notebook)'
+  const known = folders.length ? folders.map((f) => `- ${f.type}${std.has(f.type) ? '' : ' (the user\'s own folder)'}: ${f.groups.length ? f.groups.join(' · ') : '(no subfolders yet)'}`).join('\n') : '(empty notebook)'
   return `You file one recorded call as a page of the user's Meeting Notebook. Answer with JSON only, no other text.
 
 The call is Echo's folder \`calls/${call}/\` in the data folder. Read these if they are there (read-only; skip any that is missing):
@@ -151,16 +216,7 @@ Answer in exactly this shape:
 {"type":"","group":"","internal":false,"title":"","date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","eventId":"","attendees":[],"summary":"HTML","decisions":[],"actions":[{"text":"","owner":"","due":"YYYY-MM-DD or empty","mode":"claude or manual","prompt":"","how":"","echoId":"","t":0}],"myNotes":"HTML"}
 
 How to fill it:
-- type: one of ${TYPES.map((t) => `“${t}”`).join(', ')}, or a folder the notebook already has. File by what the call is about, not only by who was on it:
-  - Client = about one client or prospect: a call with their people, and also a call among colleagues only about that account (prep, an RFP or bid, a proposal, a POC, a deal review, an account sync).
-  - Partner = about one technology or alliance partner, the same way.
-  - Industry & Analyst = analysts (Gartner, IDC, Forrester, Everest…), analyst briefings and their prep, industry bodies, conferences.
-  - A folder of the user's own (any folder below that isn't one of the standard ones) wins whenever the call belongs to it: its team, programme or series, or a 1:1 with someone who has a subfolder there (a 1:1 with a person listed under such a folder goes into that folder, under their name).
-  - 1:1 = just the user and one colleague, when no folder above fits.
-  - Internal = the last resort: colleagues only, more than two, and no other folder fits (teams, programmes, offerings, practices, operating rhythm, hiring).
-  - A memo (only the user speaking) is Other.
-- group: the client or partner organisation (Client, Partner, named as the company is known, like “Edward Jones”, not a project name), the other person's full name (1:1), or the meeting series or topic (Internal and the rest). Reuse a subfolder name below exactly when it is the same client, person or series.
-- internal: true when the call is filed under Client or Partner but only colleagues were on it (prep, internal deal review); false otherwise.
+${rulesText(rules)}
 - title: the invite's subject, else a short plain title. date, start and end: from the invite, else from the call. eventId: the invite's id, else empty.
 - attendees: full names, the user included.
 - summary: HTML using only <p>, <h4>, <ul>, <li>, <b>, <i>, <mark>. First <p>: one sentence on what the meeting was for. Then <h4>Highlights</h4> and a <ul> of 3 to 7 items, each starting with a bold topic, like <li><b>Pipeline:</b> what was said, with names and numbers. [12:34]</li>. Then <h4>Risks &amp; issues</h4> with its <ul> only when there are any. End each item with the moment it comes from as [mm:ss] (or [h:mm:ss]) when you know it; Echo's minutes carry these times. Wrap a key date or deadline in <mark> (at most three).
@@ -184,11 +240,11 @@ ${cut || '(none)'}
 }
 
 /** The prompt for proposing folders for similar Internal pages (no tools: the pages are in the prompt). */
-export function suggestPrompt({ pages, folders, dismissed }) {
-  return `The user's Meeting Notebook files meetings in folders (each with subfolders). "Internal" is meant as the last resort, but it has filled up. Propose new top-level folders for groups of similar Internal meetings: a team, programme, practice, region or kind of meeting the user meets about again and again. Answer with JSON only, no other text.
+export function suggestPrompt({ pages, folders, dismissed, fallback = 'Internal', min = 3 }) {
+  return `The user's Meeting Notebook files meetings in folders (each with subfolders). "${fallback}" is meant as the last resort, but it has filled up. Propose new top-level folders for groups of similar ${fallback} meetings: a team, programme, practice, region or kind of meeting the user meets about again and again. Answer with JSON only, no other text.
 
 Rules:
-- Each proposal gathers whole Internal subfolders (named exactly as below) that belong together, at least 3 pages in all. A subfolder is in one proposal at most.
+- Each proposal gathers whole ${fallback} subfolders (named exactly as below) that belong together, at least ${min} pages in all. A subfolder is in one proposal at most.
 - A short folder name (1 to 3 words) that the user would recognise, like "Applied AI team" or "Regions & BUs". Not the name of a folder the notebook already has, and not "Internal", "Other" or "General".
 - Leave one-off meetings where they are. At most 5 proposals, the strongest first. None at all is a fine answer.
 ${dismissed.length ? `- The user turned these down before; don't propose them again: ${dismissed.join('; ')}.\n` : ''}
@@ -197,7 +253,7 @@ Answer in exactly this shape:
 
 FOLDERS NOW: ${folders.join(', ')}
 
-INTERNAL PAGES (subfolder | date | title | what it was about):
+${fallback.toUpperCase()} PAGES (subfolder | date | title | what it was about):
 ${pages.join('\n')}
 `
 }
@@ -235,6 +291,11 @@ export function apply(ctx) {
   const writeJson = (path, v) => ctx.store.write(path, JSON.stringify(v, null, 2))
   const setting = (key, d) => { try { const v = ctx.settings.get(key); return v == null || v === '' ? d : v } catch { return d } }
 
+  const rules = () => cleanRules(readJson('rules.json', null))
+  ctx.command('rules', () => ({ rules: rules(), defaults: cleanRules(DEFAULT_RULES), preview: rulesText(rules()) }))
+  ctx.command('set_rules', ({ rules: r }) => { const c = cleanRules(r); writeJson('rules.json', c); return { rules: c, preview: rulesText(c) } })
+  ctx.command('reset_rules', () => { ctx.store.remove('rules.json'); return { rules: rules(), preview: rulesText(rules()) } })
+  ctx.command('preview_rules', ({ rules: r }) => ({ preview: rulesText(r) }))
   const getNote = (id) => (validId(id) ? readJson(`notes/${id}.json`, null) : null)
   let indexDirty = true
   const putNote = (n) => { if (!validId(n.id)) throw new Error(`bad page id “${n.id}”`); writeJson(`notes/${n.id}.json`, n); indexDirty = true }
@@ -307,7 +368,7 @@ export function apply(ctx) {
     const before = filed()[call]
     setFiled(call, { ...(before || {}), state: 'filing', at: new Date().toISOString(), error: '' })
     try {
-      const prompt = filingPrompt({ call, source, me: setting('me', ''), folders: folders() })
+      const prompt = filingPrompt({ call, source, me: setting('me', ''), folders: folders(), rules: rules() })
       const out = await ctx.claude.run({ title: `Notebook: ${str(source.title) || call}`, prompt, tools: 'read', dir: `runs/${stamp()}` })
       prune()
       const page = cleanPage(parseAnswer(out.answer), { title: str(source.title), date: str(source.date) })
@@ -413,7 +474,7 @@ export function apply(ctx) {
   // (suggestions.json {at, count, items[{folder, groups[], pages, why, state: new|applied|dismissed}]}).
   // Checked hourly: again once Internal has 5 more pages than at the last look.
   const suggestions = () => readJson('suggestions.json', { at: '', count: 0, items: [] })
-  const internalPages = () => allNotes().filter((n) => (n.type || 'Other') === 'Internal')
+  const internalPages = () => { const fb = rules().fallback; return allNotes().filter((n) => (n.type || 'Other') === fb) }
   let suggesting = false
   const suggest = async () => {
     if (suggesting) throw new Error('folder suggestions are being made already')
@@ -425,7 +486,7 @@ export function apply(ctx) {
       const old = suggestions()
       const dismissed = old.items.filter((x) => x.state === 'dismissed').map((x) => `${x.folder} (${x.groups.join(', ')})`)
       const known = new Set(folders().map((f) => f.type.toLowerCase()))
-      const out = await ctx.claude.run({ title: 'Notebook: folder suggestions', prompt: suggestPrompt({ pages: lines, folders: folders().map((f) => f.type), dismissed }), tools: 'none', dir: `runs/${stamp()}` })
+      const out = await ctx.claude.run({ title: 'Notebook: folder suggestions', prompt: suggestPrompt({ pages: lines, folders: folders().map((f) => f.type), dismissed, fallback: rules().fallback, min: rules().suggestMin }), tools: 'none', dir: `runs/${stamp()}` })
       prune()
       const by = {}
       for (const n of pages) { const g = n.group || 'General'; by[g] = (by[g] || 0) + 1 }
@@ -435,7 +496,7 @@ export function apply(ctx) {
         const groups = strs(x && x.groups).filter((g) => by[g] && !used.has(g))
         groups.forEach((g) => used.add(g))
         return { folder, groups, pages: groups.reduce((t, g) => t + by[g], 0), why: str(x && x.why).trim().slice(0, 200), state: 'new' }
-      }).filter((x) => x.folder && !known.has(x.folder.toLowerCase()) && !/^(internal|other|general)$/i.test(x.folder) && x.pages >= 3).slice(0, 5)
+      }).filter((x) => x.folder && !known.has(x.folder.toLowerCase()) && !/^(internal|other|general)$/i.test(x.folder) && x.folder !== rules().fallback && x.pages >= rules().suggestMin).slice(0, 5)
       const rec = { at: new Date().toISOString(), count: pages.length, items: [...items, ...old.items.filter((x) => x.state === 'dismissed')] }
       writeJson('suggestions.json', rec)
       return rec
@@ -443,7 +504,8 @@ export function apply(ctx) {
   }
   ctx.every(3600, () => {
     const n = internalPages().length, s = suggestions()
-    if (n >= 8 && n >= (s.count || 0) + 5) suggest().catch((e) => ctx.log('suggest', (e && e.message) || e))
+    const r = rules()
+    if (r.suggest && n >= 8 && n >= (s.count || 0) + r.suggestAfter) suggest().catch((e) => ctx.log('suggest', (e && e.message) || e))
   })
   /** Make a suggested (or any) folder: the Internal subfolders named move into it, each kept as a subfolder. */
   const makeFolder = ({ folder, groups }) => {
@@ -462,7 +524,7 @@ export function apply(ctx) {
     }
     const meta = readJson('meta.json', {})
     const order = (meta.typeOrder || []).filter((t) => t !== folder)
-    const at = order.indexOf('Internal')
+    const at = order.indexOf(rules().fallback)
     if (at < 0) order.push(folder); else order.splice(at, 0, folder)
     meta.typeOrder = order
     writeJson('meta.json', meta)
@@ -508,7 +570,8 @@ export function apply(ctx) {
     running: [...running],
     me: setting('me', ''),
     deliver: deliverKinds(),
-    suggestions: suggestions().items.filter((x) => x.state === 'new'),
+    suggestions: rules().suggest ? suggestions().items.filter((x) => x.state === 'new') : [],
+    folderNames: rules().folders.map((f) => f.name),
   }))
   ctx.command('calls', () => recentCalls())
 

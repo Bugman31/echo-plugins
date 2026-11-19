@@ -41,6 +41,31 @@ A call page's action items are the call's own action items in Echo (`actions.jso
 - An action you add on the page stays in the notebook only. Echo has no way for a plugin to add to a
   call's list, and the page marks such items *Notebook only*.
 
+## Filing rules (Settings → Meeting Notebook)
+
+How Claude picks a folder and subfolder is yours to set, in Echo's **Settings → From plugins → Meeting
+Notebook**:
+
+- **Folders, in order.** Claude tries them top to bottom. Each has a name, what goes in it in plain
+  words, and how its subfolders are named: by organisation (clients, partners), by person (1:1s, a team)
+  or by series or topic. Rename them, reorder them, add your own (a team, a programme, interviews) or
+  remove ones you don't use.
+- **Last-resort folder.** Used only when no other folder fits (Internal by default).
+- **Client prep goes under the client.** A call among colleagues about one client or partner (prep, an
+  RFP, a deal review) is filed under that client and marked *Internal call*. Off: calls are filed by who
+  was on them.
+- **1:1s follow the person.** A 1:1 goes to the folder where that person already has a subfolder, such as
+  a team folder with a subfolder per team member.
+- **Your own rules.** One per line in plain words ("Calls with Phil go to Client › and5"); they win over
+  the rest.
+- **Folder suggestions.** When the last-resort folder fills up with similar meetings, Claude proposes
+  folders for them on the Today view, to make or turn down. You set how often it looks, and how many pages
+  a new folder needs.
+- **What Claude is told** shows the exact instructions these rules produce.
+
+Folders you make in the notebook itself count as your own folders and are used even when they're not in
+the list. Rules apply to calls filed from now on; pages already filed stay where they are.
+
 ## Shared screens
 
 With **Save snapshots of shared screens** on in Echo's settings, Echo keeps a snapshot each time a shared
