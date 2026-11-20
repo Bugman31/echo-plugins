@@ -6,11 +6,14 @@
 // builds the PDF, which is saved here.
 //
 //   drafts/<call>.json   {call, state: idle|running|done|failed, error, at, audience, doc, history[{doc, ask, at}], model}
-//   pdfs/<file>.pdf      the saved PDFs (plain ASCII PDF files, so the text store can hold them)
+//   pdfs/<file>.pdf      the saved PDFs (plain ASCII PDF files, so the text store can hold them), when no folder is linked
+//   out/ → <folder>      the folder the user chose (setting "folder"): Echo lets a plugin write only inside its own
+//                        folder, so `out` is a link the user makes once (the command is in Settings → Call
+//                        Summary); PDFs then go to <folder>/<subfolder>/<file>.pdf
 //   made.json            [{call, file, title, date, pages, bytes, at}], newest first
 //   runs/<stamp>/        each Claude run's prompt, answer and log (the last 30 kept)
 
-const HOST_VERSION = '0.1.3'
+const HOST_VERSION = '0.2.0'
 const KEEP_RUNS = 30
 const KEEP_HISTORY = 20
 const MAX_TRANSCRIPT = 100000
@@ -190,6 +193,17 @@ export function apply(ctx) {
   }
   const start = (p) => { p.catch((e) => ctx.log('summary', (e && e.message) || e)); return { started: true } }
 
+  // Where PDFs go: the linked folder (`out`) when there is one, else pdfs/.
+  const chosen = () => str(setting('folder', '')).trim().replace(/\/+$/, '')
+  const linked = () => { try { return ctx.store.list('').includes('out') } catch { return false } }
+  const base = () => (linked() ? 'out' : 'pdfs')
+  const baseDir = () => (linked() && chosen() ? chosen() : ctx.store.path(base()))
+  const dataDir = () => ctx.store.path('').replace(/\/+$/, '')
+  const quote = (p) => `"${p.replace(/(["\\$`])/g, '\\$1')}"`
+  const linkCommand = (folder) => (folder ? `ln -sfn ${quote(folder)} ${quote(dataDir() + '/out')}` : '')
+  const validSub = (v) => { const x = str(v).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80); return x && !x.startsWith('.') && x !== '..' ? x : '' }
+  // Subfolders to offer: what is in the save folder that has no file extension (folders, mostly).
+  const subfolders = () => { try { return ctx.store.list(base()).filter((n) => !n.startsWith('.') && !/\.[A-Za-z0-9]{1,5}$/.test(n)).slice(0, 300) } catch { return [] } }
   const made = () => readJson('made.json', [])
   ctx.command('view', ({ call } = {}) => {
     const all = made()
@@ -200,7 +214,9 @@ export function apply(ctx) {
       madeCalls: [...new Set(all.map((m) => m.call))],
       me: me(),
       paper: /^a4$/i.test(str(setting('paper', 'letter')).trim()) ? 'a4' : 'letter',
-      folder: ctx.store.path('pdfs'),
+      folder: baseDir(),
+      legacy: ctx.store.path('pdfs'),
+      save: { chosen: chosen(), linked: linked(), base: baseDir(), subfolders: subfolders(), command: linkCommand(chosen()) },
       version: HOST_VERSION,
       installed: (() => { try { return JSON.parse(ctx.package.read('echo-plugin.json')).version || '' } catch { return '' } })(),
     }
@@ -240,8 +256,10 @@ export function apply(ctx) {
     uploads.set(key, u)
     return { ok: true }
   })
-  /** The PDF (ASCII only), saved under pdfs/; an earlier one of the same name is replaced. */
-  ctx.command('save_pdf', ({ id, count, call, name, pages, title, date }) => {
+  ctx.command('settings_view', () => ({ chosen: chosen(), linked: linked(), base: baseDir(), command: linkCommand(chosen()), data: dataDir() }))
+  /** The PDF (ASCII only), saved in the save folder (a subfolder of it when one is given); an earlier one of the
+   *  same name there is replaced. */
+  ctx.command('save_pdf', ({ id, count, call, name, pages, title, date, sub }) => {
     const u = uploads.get(str(id))
     if (!u || u.parts.length !== count || u.parts.some((p) => p == null)) throw new Error('the PDF arrived incomplete: save it again')
     uploads.delete(str(id))
@@ -249,9 +267,11 @@ export function apply(ctx) {
     if (!/\.pdf$/i.test(file) || file.startsWith('.') || file.length > 140) throw new Error('bad file name')
     const body = u.parts.join('')
     if (!body.startsWith('%PDF-') || /[^\x09\x0a\x0d\x20-\x7e]/.test(body)) throw new Error("that isn't a PDF this plugin made")
-    ctx.store.write(`pdfs/${file}`, body)
-    const rec = { call: str(call), file, title: str(title).slice(0, 160), date: ymd(date), pages: Math.max(1, Math.round(+pages || 1)), bytes: body.length, at: new Date().toISOString() }
-    writeJson('made.json', [rec, ...made().filter((m) => m.file !== file)].slice(0, 300))
-    return { ...rec, path: ctx.store.path(`pdfs/${file}`) }
+    const folder = validSub(sub)
+    ctx.store.write(`${base()}/${folder ? folder + '/' : ''}${file}`, body)
+    const path = `${baseDir()}/${folder ? folder + '/' : ''}${file}`
+    const rec = { call: str(call), file, sub: folder, path, title: str(title).slice(0, 160), date: ymd(date), pages: Math.max(1, Math.round(+pages || 1)), bytes: body.length, at: new Date().toISOString() }
+    writeJson('made.json', [rec, ...made().filter((m) => m.path !== path)].slice(0, 300))
+    return rec
   })
 }

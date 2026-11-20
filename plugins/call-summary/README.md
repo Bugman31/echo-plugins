@@ -36,14 +36,19 @@ Latin letters. Screenshots are the call window as Echo captured it.
 
 ## Where the PDFs are
 
-In the plugin's data folder in Echo: `<Echo folder>/.echo/plugins/call-summary/pdfs/`. The saved screen
-shows the full path and copies it for you. To reach them from Finder, make a shortcut once in Terminal:
+Choose the folder in **Settings → Plugins → Call Summary → Save PDFs in** (Documents, OneDrive, a shared
+folder…). When you save a PDF you pick one of its subfolders, or make one (a folder per client, say).
+
+Echo lets a plugin write only inside its own folder, so link yours to it once: **Settings → Call Summary**
+shows the Terminal command, with a Copy button. It looks like this:
 
 ```bash
-ln -s ~/OctoDeck/.echo/plugins/call-summary/pdfs ~/Documents/"Call summaries"
+ln -sfn "$HOME/Documents" "$HOME/OctoDeck/.echo/plugins/call-summary/out"
 ```
 
-(with your own Echo folder in place of `~/OctoDeck`).
+Run it again if you choose a different folder later. Until the folder is linked, PDFs go to the plugin's own
+folder (`<Echo folder>/.echo/plugins/call-summary/pdfs/`), and the save screen says so. The plugin only
+ever writes `.pdf` files it made, and never deletes anything.
 
 ## Needs
 

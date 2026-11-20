@@ -2,7 +2,7 @@
 // "Create summary PDF" item in each call's menu, and ⌘K entries. The PDF is built here (pdf.js) and saved by
 // the host half, in parts.
 
-const VERSION = '0.1.3'
+const VERSION = '0.2.0'
 const ACTIVITY = 'call-summary:summaries'
 const ICON = (s) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 15h5M10 18h3"/></svg>`
 const SECTIONS = [['summary', 'Summary'], ['decisions', 'Decisions'], ['actions', 'Action items (owner, due date)'], ['topics', 'Discussion, by topic'], ['questions', 'Open questions'], ['screens', 'Shared screens'], ['attendees', 'Attendees']]
@@ -120,6 +120,7 @@ const CSS = `
 .cs .cs-file b{font-weight:500;overflow-wrap:anywhere}
 .cs .cs-mail{flex:0 1 380px;background:var(--sheet);border:1px solid var(--rule);border-radius:5px;padding:20px 22px;display:flex;flex-direction:column;gap:10px}
 .cs .cs-mail pre{margin:0;white-space:pre-wrap;font:inherit;font-size:13px;line-height:1.6;font-weight:300}
+.cs .cs-subin{flex:1;min-width:0;font:inherit;font-size:13.5px;padding:7px 10px;border:1px solid var(--rule);border-radius:5px;background:var(--sheet);color:var(--ink)}
 .cs .cs-toast{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:8px 14px;border-radius:5px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:40;max-width:80%}
 .cs .cs-toast.show{opacity:1}
 .cs .cs-lightbox{position:fixed;inset:0;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;z-index:60;cursor:zoom-out;padding:16px}
@@ -147,6 +148,7 @@ export function apply(ctx) {
   let screen = 'list', calls = [], callsNext = null, q = '', week = lsGet('cs-week', true), sel = null, loadingCalls = false
   let info = null, rec = null, frames = [], saved = null, saving = '', lastLoad = 0
   const sections = lsGet('cs-sections', {})
+  let sub = lsGet('cs-sub', ''), newSub = false
   const secOn = (k) => sections[k] !== false
 
   // ---- data
@@ -259,7 +261,8 @@ export function apply(ctx) {
         <p class="cs-note">${aud === 'team' ? 'For your team: internal context and candid remarks can stay.' : 'For everyone: no internal remarks, pricing talk or side conversations.'} Changing it writes the summary again.</p></fieldset>
       <fieldset><legend class="cs-lbl">Sections</legend>${SECTIONS.map(([k, label]) => `<label class="cs-check"><input type="checkbox" data-cs-sec="${k}" ${secOn(k) ? 'checked' : ''}> ${label}</label>`).join('')}</fieldset>
       ${sh.length ? `<fieldset><legend class="cs-lbl">Screens to include · ${sh.filter((x) => x.include).length} of ${sh.length}</legend><div class="cs-shots">${sh.map((x, i) => `<label class="cs-shot${x.include ? ' on' : ''}"><span class="im"><img loading="lazy" src="${esc(x.url)}" alt="${esc(x.caption || 'Shared screen')}"></span><span><input type="checkbox" data-cs-shot="${i}" ${x.include ? 'checked' : ''} ${busy() || !d ? 'disabled' : ''}> ${clock(x.t)}</span></label>`).join('')}</div></fieldset>` : ''}
-      <div class="cs-bar" style="margin-top:auto"><button class="cs-pill pri" data-cs-save ${!d || busy() || saving ? 'disabled' : ''}>${saving ? esc(saving) : 'Save PDF'}</button><button class="cs-pill" data-cs-redo ${busy() ? 'disabled' : ''}>${d ? 'Write again' : 'Write it'}</button></div>
+      ${saveInHtml()}
+      <div class="cs-bar"><button class="cs-pill pri" data-cs-save ${!d || busy() || saving ? 'disabled' : ''}>${saving ? esc(saving) : 'Save PDF'}</button><button class="cs-pill" data-cs-redo ${busy() ? 'disabled' : ''}>${d ? 'Write again' : 'Write it'}</button></div>
     </aside>
     <div class="cs-desk">
       <div class="cs-scroll">
@@ -276,17 +279,30 @@ export function apply(ctx) {
     </div>`
   }
 
+  // ---- where the PDF goes
+  const lastPart = (p) => String(p || '').replace(/\/+$/, '').split('/').pop()
+  function saveInHtml() {
+    const sv = (info && info.save) || {}
+    const subs = [...new Set([...(sv.subfolders || []), ...(sub ? [sub] : [])])].sort((a, b) => a.localeCompare(b))
+    const where = sv.linked && sv.chosen ? lastPart(sv.chosen) : 'Call Summary’s own folder'
+    return `<fieldset style="margin-top:auto"><legend class="cs-lbl">Save in</legend>
+      <div class="cs-bar" style="flex-wrap:nowrap"><span style="font-size:13.5px;white-space:nowrap">${esc(where)} ›</span>
+        ${newSub ? `<label for="cs-newsub" style="position:absolute;left:-9999px">New folder name</label><input id="cs-newsub" class="cs-subin" placeholder="New folder, e.g. Corning" value="${esc(sub)}" maxlength="80">`
+          : `<label for="cs-sub" style="position:absolute;left:-9999px">Subfolder</label><select id="cs-sub" class="cs-subin"><option value=""${sub ? '' : ' selected'}>(the folder itself)</option>${subs.map((x) => `<option${x === sub ? ' selected' : ''}>${esc(x)}</option>`).join('')}<option value="__new">New folder…</option></select>`}</div>
+      ${sv.chosen && !sv.linked ? '<p class="cs-note cs-err">Your folder isn’t linked yet, so PDFs go to the plugin’s own folder. Settings → Call Summary has the one-time Terminal command.</p>' : !sv.chosen ? '<p class="cs-note">Choose your folder in Settings → Plugins → Call Summary → Save PDFs in.</p>' : ''}
+    </fieldset>`
+  }
   // ---- saved
   function savedHtml() {
     const s = saved, d = rec && rec.doc
-    const all = ((info && info.made) || []).filter((m) => m.file !== (s && s.file)).slice(0, 8)
+    const all = ((info && info.made) || []).filter((m) => m.path !== (s && s.path)).slice(0, 8)
     return `<div class="cs-saved">
       <section>
         <p class="cs-lbl" style="color:var(--accent)">PDF saved</p><h1>${esc((d && d.title) || (s && s.title) || '')}</h1>
         <div class="cs-file"><svg width="36" height="44" viewBox="0 0 40 48" aria-hidden="true"><path d="M2 2h26l10 10v34H2z" fill="none" stroke="currentColor"/><path d="M28 2v10h10" fill="none" stroke="currentColor"/><rect x="6" y="30" width="24" height="10" fill="var(--accent)"/></svg>
-          <div style="display:flex;flex-direction:column;gap:3px;min-width:0"><b>${esc(s.file)}</b><span class="cs-note">${s.pages} page${s.pages === 1 ? '' : 's'} · ${esc(size(s.bytes))} · ${esc(s.path)}</span></div></div>
+          <div style="display:flex;flex-direction:column;gap:3px;min-width:0"><b>${esc(s.file)}</b><span class="cs-note">${s.pages} page${s.pages === 1 ? '' : 's'} · ${esc(size(s.bytes))} · in ${esc(s.path.slice(0, s.path.length - s.file.length - 1))}</span></div></div>
         <div class="cs-bar"><button class="cs-pill pri" data-cs-copypath="1">Copy file location</button><button class="cs-pill" data-cs-copymail>Copy email text</button><button class="cs-pill" data-cs-go="build">Back to the summary</button></div>
-        <p class="cs-note" style="font-size:13.5px;line-height:1.6">Attach it in Outlook: in the file picker press ⌘⇧G and paste the copied location. <b>Copy email text</b> gives you a subject and a short cover note, ready to paste.</p>
+        <p class="cs-note" style="font-size:13.5px;line-height:1.6">Attach it in Outlook from that folder, or in the file picker press ⌘⇧G and paste the copied location. <b>Copy email text</b> gives you a subject and a short cover note, ready to paste.</p>
         ${all.length ? `<div><p class="cs-lbl" style="margin-bottom:4px">Earlier PDFs</p><div class="cs-made">${all.map((m, i) => `<div><span>${esc(m.file)}</span><span class="cs-note">${esc(new Date(m.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))} · ${m.pages} p.</span><button class="cs-chip" data-cs-copyold="${i}">Copy location</button></div>`).join('')}</div></div>` : ''}
       </section>
       ${d && d.email && (d.email.subject || d.email.body) ? `<aside class="cs-mail" aria-label="Email text"><p class="cs-lbl">Email text</p><p style="margin:0;font-size:13px"><b>Subject:</b> ${esc(d.email.subject)}</p><pre>${esc(d.email.body)}</pre></aside>` : ''}
@@ -319,11 +335,14 @@ export function apply(ctx) {
   root.addEventListener('input', (e) => {
     const f = e.target.closest && e.target.closest('[data-cs-f]')
     if (f && rec && rec.doc) { setPath(rec.doc, f.dataset.csF, f.isContentEditable ? f.textContent : f.value); lastHtml = ''; saveDoc() }
+    if (e.target.id === 'cs-newsub') { sub = e.target.value.trim() }
     if (e.target.id === 'cs-q') { q = e.target.value.trim(); clearTimeout(root._qt); root._qt = setTimeout(() => { callsNext = null; loadCalls(false) }, 300) }
   })
   root.addEventListener('focusout', () => setTimeout(() => { if (!typing()) draw() }, 50))
   root.addEventListener('change', (e) => {
     const t = e.target
+    if (t.id === 'cs-sub') { if (t.value === '__new') { newSub = true; sub = ''; draw(true); const i = root.querySelector('#cs-newsub'); if (i) i.focus() } else { sub = t.value; lsSet('cs-sub', sub) } return }
+    if (t.id === 'cs-newsub') { sub = t.value.trim(); lsSet('cs-sub', sub); return }
     if (t.dataset.csSec) { sections[t.dataset.csSec] = t.checked; lsSet('cs-sections', sections); draw(true); return }
     if (t.dataset.csShot != null && rec && rec.doc) {
       const x = shots()[+t.dataset.csShot]; if (!x) return
@@ -384,7 +403,8 @@ export function apply(ctx) {
       const id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
       for (let i = 0; i < parts.length; i++) { saving = `Saving… ${Math.round((i / parts.length) * 100)}%`; if (i % 4 === 0) draw(true); await ctx.call('save_part', { id, i, data: parts[i] }) }
       const name = `${d.date ? d.date + ' ' : ''}${d.title || 'Meeting'}`.replace(/[\\/:*?"<>|#%{}~&]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 110) + ' - Summary.pdf'
-      saved = await ctx.call('save_pdf', { id, count: parts.length, call: sel, name, pages, title: d.title, date: d.date })
+      saved = await ctx.call('save_pdf', { id, count: parts.length, call: sel, name, pages, title: d.title, date: d.date, sub })
+      newSub = false; lsSet('cs-sub', sub)
       saving = ''; screen = 'saved'
       await loadView()
       copy(saved.path, 'PDF saved · its location is copied')
@@ -407,8 +427,9 @@ export function apply(ctx) {
     if (ds.csAskchip != null) { const a = ((rec && rec.doc && rec.doc.asks) || [])[+ds.csAskchip]; if (a) ask(a); return }
     if (ds.csUndo !== undefined) { try { const r = await ctx.call('undo', { call: sel }); rec = r.draft; lastHtml = ''; draw(true); toast(`Undone: ${r.undid}`) } catch (err) { toast("Couldn't undo: " + (err.message || err)) } return }
     if (ds.csSave !== undefined) { savePdf(); return }
-    if (ds.csCopypath) { const p = ds.csCopypath === '1' && saved ? saved.path : (((info && info.made) || []).find((m) => m.call === sel) || {}).file; if (p) copy(ds.csCopypath === '1' ? p : `${info.folder}/${p}`, 'Location copied'); return }
-    if (ds.csCopyold != null) { const all = ((info && info.made) || []).filter((m) => m.file !== (saved && saved.file)); const m = all[+ds.csCopyold]; if (m) copy(`${info.folder}/${m.file}`, 'Location copied'); return }
+    const pathOf = (m) => (m && (m.path || `${info.legacy}/${m.file}`)) || ''
+    if (ds.csCopypath) { const p = ds.csCopypath === '1' && saved ? saved.path : pathOf(((info && info.made) || []).find((m) => m.call === sel)); if (p) copy(p, 'Location copied'); return }
+    if (ds.csCopyold != null) { const all = ((info && info.made) || []).filter((m) => m.path !== (saved && saved.path)); const m = all[+ds.csCopyold]; if (m) copy(pathOf(m), 'Location copied'); return }
     if (ds.csCopymail !== undefined) { const d = rec && rec.doc; if (d) copy(`Subject: ${d.email.subject}\n\n${d.email.body}`, 'Email text copied'); return }
     if (ds.csDel && rec && rec.doc) { const [k, i] = ds.csDel.split('.'); rec.doc[k].splice(+i, 1); saveDoc(); draw(true); return }
     if (ds.csAdd && rec && rec.doc) {
@@ -437,6 +458,31 @@ export function apply(ctx) {
     label: 'Create summary PDF',
     icon: ICON(16),
     run: (t) => { const call = t && t.call && t.call.name; if (!call) return; ctx.go(ACTIVITY); setTimeout(() => openBuild(call), 50) },
+  })
+  // Settings → Call Summary: where PDFs go, and the one-time link to the chosen folder.
+  let setInfo = null
+  const loadSet = () => ctx.call('settings_view').then((v) => { setInfo = v; ctx.render && ctx.render() }).catch(() => {})
+  if (ctx.settings && ctx.settings.section) ctx.settings.section({
+    id: 'main',
+    label: 'Call Summary',
+    icon: ICON(18),
+    render() {
+      if (!setInfo) { loadSet(); return '<p class="set-sub">Reading…</p>' }
+      const v = setInfo
+      const state = !v.chosen ? 'No folder chosen: PDFs are saved in Call Summary’s own folder.' : v.linked ? `PDFs are saved in ${v.chosen}.` : `You chose ${v.chosen}, but it isn’t linked yet: PDFs still go to Call Summary’s own folder.`
+      return ctx.ui.setCard('Where PDFs are saved', [
+        `<p class="set-sub">${esc(state)}</p>`,
+        `<p class="set-sub">1. Choose the folder in Settings → Plugins → Call Summary → <b>Save PDFs in</b>. When you save a PDF you pick one of its subfolders, or make one (a folder per client, say).</p>`,
+        `<p class="set-sub">2. Echo lets a plugin write only inside its own folder, so link yours to it once: run this in Terminal${v.linked ? ' (again, if you chose a different folder since)' : ''}.</p>`,
+        v.command ? `<pre class="cs-setcmd" style="white-space:pre-wrap;font-size:12px;padding:10px 12px;border:1px solid var(--line);border-radius:6px">${esc(v.command)}</pre><div style="display:flex;gap:8px;margin-top:8px"><button class="btn primary" data-cs-setcopy>Copy the command</button><button class="btn" data-cs-setcheck>Check again</button></div>` : '<p class="set-sub"><i>The command shows here once a folder is chosen.</i></p>',
+      ])
+    },
+  })
+  if (ctx.listen) ctx.listen('click', (e) => {
+    const b = e.target.closest && e.target.closest('[data-cs-setcopy],[data-cs-setcheck]')
+    if (!b) return
+    if (b.dataset.csSetcopy !== undefined && setInfo) navigator.clipboard.writeText(setInfo.command).then(() => ctx.ui.notice('Command copied: paste it in Terminal and press Return.')).catch(() => {})
+    if (b.dataset.csSetcheck !== undefined) { setInfo = null; loadSet() }
   })
   if (ctx.palette) ctx.palette.add({ label: 'Create a call summary PDF', group: 'Call Summary', keywords: 'summary pdf share email minutes', run: () => { screen = 'list'; ctx.go(ACTIVITY) } })
 }
