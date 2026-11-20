@@ -10,6 +10,7 @@
 //   made.json            [{call, file, title, date, pages, bytes, at}], newest first
 //   runs/<stamp>/        each Claude run's prompt, answer and log (the last 30 kept)
 
+const HOST_VERSION = '0.1.3'
 const KEEP_RUNS = 30
 const KEEP_HISTORY = 20
 const MAX_TRANSCRIPT = 100000
@@ -200,6 +201,8 @@ export function apply(ctx) {
       me: me(),
       paper: /^a4$/i.test(str(setting('paper', 'letter')).trim()) ? 'a4' : 'letter',
       folder: ctx.store.path('pdfs'),
+      version: HOST_VERSION,
+      installed: (() => { try { return JSON.parse(ctx.package.read('echo-plugin.json')).version || '' } catch { return '' } })(),
     }
   })
   ctx.command('draft', ({ call, audience }) => start(work(call, 'draft', '', null, audience)))

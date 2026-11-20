@@ -2,7 +2,7 @@
 // "Create summary PDF" item in each call's menu, and ⌘K entries. The PDF is built here (pdf.js) and saved by
 // the host half, in parts.
 
-const VERSION = '0.1.2'
+const VERSION = '0.1.3'
 const ACTIVITY = 'call-summary:summaries'
 const ICON = (s) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 15h5M10 18h3"/></svg>`
 const SECTIONS = [['summary', 'Summary'], ['decisions', 'Decisions'], ['actions', 'Action items (owner, due date)'], ['topics', 'Discussion, by topic'], ['questions', 'Open questions'], ['screens', 'Shared screens'], ['attendees', 'Attendees']]
@@ -164,7 +164,12 @@ export function apply(ctx) {
   }
   async function loadView() {
     lastLoad = Date.now()
-    try { info = await ctx.call('view', { call: sel || '' }); rec = info.draft } catch (e) { toast("Couldn't read the summary: " + (e.message || e)) }
+    try {
+      const keep = pending && rec && rec.doc && rec.call === sel ? rec.doc : null
+      info = await ctx.call('view', { call: sel || '' }); rec = info.draft
+      // An edit not saved yet stays (the host's copy is older), unless Claude is rewriting.
+      if (keep && rec && rec.state !== 'running') rec.doc = keep
+    } catch (e) { toast("Couldn't read the summary: " + (e.message || e)) }
     draw()
   }
   async function loadFrames(call) {
@@ -175,6 +180,11 @@ export function apply(ctx) {
   const ready = (c) => !c || !c.status || c.status === 'notes'
   const callOf = (name) => calls.find((c) => c.name === name) || { name, title: name }
 
+  /** Echo loads a plugin's window half when it starts: after an update, say so until it is reopened. */
+  const staleHtml = () => {
+    const v = info && (info.installed || info.version)
+    return v && v !== VERSION ? `<div class="cs-wait" style="margin:12px 28px 0;text-align:left">Call Summary ${esc(v)} is installed, but this window still runs ${VERSION}. Quit Echo and open it again to use the new version.</div>` : ''
+  }
   // ---- list
   const startedAt = (c) => (c.started_at ? new Date(c.started_at) : null)
   const whenShort = (c) => { const d = startedAt(c); return d ? d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : '' }
@@ -189,6 +199,7 @@ export function apply(ctx) {
     const people = c && (c.people || []).map((p) => (typeof p === 'string' ? p : p.name || p.display || '')).filter(Boolean)
     return `<div class="cs-list">
       <header class="cs-band"><p class="cs-lbl">Call summaries</p><h1>Share a call as a PDF</h1><p>Pick any call Echo recorded. Claude writes the notes, you choose the screens and check it, and the PDF is saved for you to email.</p></header>
+      ${staleHtml()}
       <div class="cs-find"><label for="cs-q" style="position:absolute;left:-9999px">Search calls</label><input id="cs-q" placeholder="Search calls, people, clients" value="${esc(q)}" autocomplete="off">
         <button class="cs-chip${week ? ' on' : ''}" data-cs-week="1">This week</button><button class="cs-chip${!week ? ' on' : ''}" data-cs-week="0">All</button></div>
       <div class="cs-rows">${rows.length ? rows.map(row).join('') : `<p class="cs-note" style="padding:18px 28px">${loadingCalls ? 'Reading your calls…' : q ? `No calls match “${esc(q)}”.` : 'No calls this week. Choose All to see older ones.'}</p>`}
@@ -242,6 +253,7 @@ export function apply(ctx) {
     const lastAsk = rec && rec.lastAsk
     const asks = (d && d.asks) || []
     return `<aside class="cs-opts" aria-label="Summary options">
+      ${staleHtml().replace('margin:12px 28px 0', 'margin:0')}
       <div style="display:flex;flex-direction:column;gap:6px"><button class="cs-back" data-cs-go="list">‹ Calls · Summary PDF</button><h1>${esc(c.title || sel)}</h1></div>
       <fieldset><legend class="cs-lbl">Written for</legend><div class="cs-bar"><button class="cs-chip${aud === 'everyone' ? ' on' : ''}" data-cs-aud="everyone" ${busy() ? 'disabled' : ''}>Everyone on the call</button><button class="cs-chip${aud === 'team' ? ' on' : ''}" data-cs-aud="team" ${busy() ? 'disabled' : ''}>My team only</button></div>
         <p class="cs-note">${aud === 'team' ? 'For your team: internal context and candid remarks can stay.' : 'For everyone: no internal remarks, pricing talk or side conversations.'} Changing it writes the summary again.</p></fieldset>
@@ -299,8 +311,11 @@ export function apply(ctx) {
 
   // ---- edits in the preview
   const setPath = (obj, path, v) => { const ks = path.split('.'); let o = obj; for (let i = 0; i < ks.length - 1; i++) { o = o[/^\d+$/.test(ks[i]) ? +ks[i] : ks[i]]; if (o == null) return } o[/^\d+$/.test(ks[ks.length - 1]) ? +ks[ks.length - 1] : ks[ks.length - 1]] = v }
-  let saveT = null
-  const saveDoc = () => { clearTimeout(saveT); saveT = setTimeout(() => { if (!rec || !rec.doc || busy()) return; ctx.call('save_doc', { call: sel, doc: rec.doc }).catch((e) => toast("Couldn't keep your edit: " + (e.message || e))) }, 700) }
+  let saveT = null, pending = false
+  const saveDoc = () => {
+    pending = true; clearTimeout(saveT)
+    saveT = setTimeout(() => { if (!rec || !rec.doc || busy()) { pending = false; return } ctx.call('save_doc', { call: sel, doc: rec.doc }).catch((e) => toast("Couldn't keep your edit: " + (e.message || e))).finally(() => { pending = false }) }, 700)
+  }
   root.addEventListener('input', (e) => {
     const f = e.target.closest && e.target.closest('[data-cs-f]')
     if (f && rec && rec.doc) { setPath(rec.doc, f.dataset.csF, f.isContentEditable ? f.textContent : f.value); lastHtml = ''; saveDoc() }
@@ -336,7 +351,7 @@ export function apply(ctx) {
   }
   async function ask(text) {
     text = String(text || '').trim(); if (!text) { toast('Say what to change first'); return }
-    clearTimeout(saveT)
+    clearTimeout(saveT); pending = false
     try { await ctx.call('revise', { call: sel, ask: text, doc: rec.doc }); rec = { ...rec, state: 'running', lastAsk: text }; const ab = root.querySelector('#cs-askbox'); if (ab) ab.value = ''; draw(true); poll() } catch (e) { toast("Couldn't start: " + (e.message || e)) }
   }
   function poll() { clearTimeout(poll.t); poll.t = setTimeout(async () => { await loadView(); if (busy()) poll(); else if (rec && rec.state === 'done') toast(rec.lastAsk ? 'Changed' : 'Summary written'); else if (rec && rec.state === 'failed') toast("Couldn't: " + (rec.error || 'something went wrong')) }, 3000) }
@@ -354,7 +369,7 @@ export function apply(ctx) {
   }
   async function savePdf() {
     if (!rec || !rec.doc) return
-    clearTimeout(saveT)
+    clearTimeout(saveT); pending = false
     const d = rec.doc
     try {
       saving = 'Making the PDF…'; draw(true)
