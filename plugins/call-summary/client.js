@@ -2,7 +2,7 @@
 // "Create summary PDF" item in each call's menu, and ⌘K entries. The PDF is built here (pdf.js) and saved by
 // the host half, in parts.
 
-const VERSION = '0.1.1'
+const VERSION = '0.1.2'
 const ACTIVITY = 'call-summary:summaries'
 const ICON = (s) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 15h5M10 18h3"/></svg>`
 const SECTIONS = [['summary', 'Summary'], ['decisions', 'Decisions'], ['actions', 'Action items (owner, due date)'], ['topics', 'Discussion, by topic'], ['questions', 'Open questions'], ['screens', 'Shared screens'], ['attendees', 'Attendees']]
@@ -159,7 +159,7 @@ export function apply(ctx) {
       const rows = (d.calls || []).filter((c) => c && c.name && !c.memo && c.status !== 'recording')
       calls = more ? [...calls, ...rows] : rows
       callsNext = d.next || null
-      if (!sel && calls.length) sel = calls[0].name
+      if (!sel && calls.length) sel = (calls.find(ready) || calls[0]).name
     } catch (e) { toast("Couldn't read your calls: " + (e.message || e)) } finally { loadingCalls = false; draw() }
   }
   async function loadView() {
@@ -172,6 +172,7 @@ export function apply(ctx) {
     draw()
   }
   const busy = () => rec && rec.state === 'running'
+  const ready = (c) => !c || !c.status || c.status === 'notes'
   const callOf = (name) => calls.find((c) => c.name === name) || { name, title: name }
 
   // ---- list
@@ -182,7 +183,7 @@ export function apply(ctx) {
     const madeSet = new Set((info && info.madeCalls) || [])
     const cutoff = Date.now() - 7 * 864e5
     const rows = calls.filter((c) => !week || q || (startedAt(c) && startedAt(c).getTime() >= cutoff))
-    const row = (c) => `<button class="cs-row${c.name === sel ? ' on' : ''}" data-cs-sel="${esc(c.name)}"><span class="t">${esc(whenShort(c))}</span><span class="nm">${esc(c.title || c.name)}</span>${madeSet.has(c.name) ? '<span class="cs-tag">PDF made</span>' : '<span></span>'}<span class="sub">${esc([c.minutes ? `${c.minutes} min` : '', (c.people || []).length ? `${c.people.length} people` : '', c.frames ? 'shared screens' : '', c.imported ? 'from a Teams transcript' : ''].filter(Boolean).join(' · '))}</span></button>`
+    const row = (c) => `<button class="cs-row${c.name === sel ? ' on' : ''}" data-cs-sel="${esc(c.name)}"><span class="t">${esc(whenShort(c))}</span><span class="nm">${esc(c.title || c.name)}</span>${madeSet.has(c.name) ? '<span class="cs-tag">PDF made</span>' : !ready(c) ? '<span class="cs-tag" style="border-color:var(--rule);color:var(--muted)">No minutes yet</span>' : '<span></span>'}<span class="sub">${esc([c.minutes ? `${c.minutes} min` : '', (c.people || []).length ? `${c.people.length} people` : '', c.frames ? 'shared screens' : '', c.imported ? 'from a Teams transcript' : ''].filter(Boolean).join(' · '))}</span></button>`
     const c = sel && callOf(sel)
     const made = ((info && info.made) || []).filter((m) => m.call === sel)
     const people = c && (c.people || []).map((p) => (typeof p === 'string' ? p : p.name || p.display || '')).filter(Boolean)
@@ -195,7 +196,8 @@ export function apply(ctx) {
     </div>
     <div class="cs-pane">${c ? `
       <p class="cs-lbl">${esc(whenLong(c))}</p><h2>${esc(c.title || c.name)}</h2>
-      <div class="cs-bar"><button class="cs-pill pri" data-cs-open>${rec && rec.doc ? 'Open the summary' : 'Create summary PDF'}</button>${made.length ? '<button class="cs-pill" data-cs-copypath="0">Copy last PDF’s location</button>' : ''}</div>
+      ${!ready(c) && !(rec && rec.doc) ? `<p class="cs-note" style="font-size:14px;line-height:1.55">Echo hasn't written the minutes for this call yet${c.status === 'transcribing' ? ' (it is still transcribing)' : c.status === 'recording' ? ' (it is still recording)' : ''}. It does that about 15 minutes after a call ends, or later while another call is recording. A summary can be made once they're there.</p>` : ''}
+      <div class="cs-bar"><button class="cs-pill pri" data-cs-open ${!ready(c) && !(rec && rec.doc) ? 'disabled' : ''}>${rec && rec.doc ? 'Open the summary' : 'Create summary PDF'}</button>${made.length ? '<button class="cs-pill" data-cs-copypath="0">Copy last PDF’s location</button>' : ''}</div>
       ${rec && rec.state === 'running' ? '<p class="cs-note">Claude is writing the summary…</p>' : rec && rec.state === 'failed' ? `<p class="cs-note cs-err">The last try failed: ${esc(rec.error || '')}</p>` : ''}
       <dl class="cs-facts">
         <dt>From the call</dt><dd>Echo's minutes, the transcript${c.chat ? ', the chat' : ''}${c.frames ? ' and the shared screens' : ''}; your Meeting Notebook page, if it has one</dd>
@@ -250,7 +252,7 @@ export function apply(ctx) {
     <div class="cs-desk">
       <div class="cs-scroll">
         ${busy() ? `<div class="cs-wait">${rec.lastAsk ? `Claude is making your change: “${esc(rec.lastAsk)}”…` : 'Claude is writing the summary from the call. This takes a minute or two.'}</div>` : ''}
-        ${rec && rec.state === 'failed' ? `<div class="cs-wait cs-err">Couldn't ${rec.lastAsk ? 'make the change' : 'write the summary'}: ${esc(rec.error || '')}</div>` : ''}
+        ${rec && rec.state === 'failed' ? `<div class="cs-wait cs-err">Couldn't ${rec.lastAsk ? 'make the change' : 'write the summary'}: ${esc(rec.error || '')} <button class="cs-chip" data-cs-redo style="margin-left:8px">Try again</button></div>` : ''}
         ${d ? `<p class="cs-note">Preview · click any text to change it before you save</p><article class="cs-page" id="cs-page" aria-label="Summary preview">${pageHtml(d)}</article>` : busy() ? '' : '<p class="cs-note" style="margin-top:40px">No summary yet. Choose who it\'s for, then <b>Write it</b>.</p>'}
       </div>
       ${d ? `<section class="cs-ask" aria-label="Ask Claude to change the summary">
@@ -325,7 +327,8 @@ export function apply(ctx) {
     sel = call; screen = 'build'; saved = null; frames = []; draw(true)
     await loadView()
     loadFrames(call)
-    if (!rec || (!rec.doc && rec.state !== 'running')) write()
+    // The first time only: a failed try is shown, with Try again, never retried by itself.
+    if (!rec || (!rec.doc && (!rec.state || rec.state === 'idle'))) write()
   }
   async function write(audience) {
     const aud = audience || (rec && rec.audience) || lsGet('cs-aud', 'everyone')
@@ -336,7 +339,7 @@ export function apply(ctx) {
     clearTimeout(saveT)
     try { await ctx.call('revise', { call: sel, ask: text, doc: rec.doc }); rec = { ...rec, state: 'running', lastAsk: text }; const ab = root.querySelector('#cs-askbox'); if (ab) ab.value = ''; draw(true); poll() } catch (e) { toast("Couldn't start: " + (e.message || e)) }
   }
-  function poll() { clearTimeout(poll.t); poll.t = setTimeout(async () => { await loadView(); if (busy()) poll(); else if (rec && rec.state === 'done') toast(rec.lastAsk ? 'Changed' : 'Summary written') }, 3000) }
+  function poll() { clearTimeout(poll.t); poll.t = setTimeout(async () => { await loadView(); if (busy()) poll(); else if (rec && rec.state === 'done') toast(rec.lastAsk ? 'Changed' : 'Summary written'); else if (rec && rec.state === 'failed') toast("Couldn't: " + (rec.error || 'something went wrong')) }, 3000) }
   const copy = async (s, ok) => { try { await navigator.clipboard.writeText(s); toast(ok) } catch { toast("Couldn't copy") } }
 
   async function jpegHex(url) {

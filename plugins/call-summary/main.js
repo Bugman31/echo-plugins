@@ -156,7 +156,12 @@ export function apply(ctx) {
     if (!validCall(call)) throw new Error(`no call “${call}”`)
     if (running.has(call)) throw new Error('Claude is already working on this summary')
     const found = findCall(call)
-    if (!found) throw new Error("Echo has no minutes for this call yet. Write them in Echo first (the call's Minutes tab).")
+    if (!found) {
+      // Said on the draft, so the window shows it instead of waiting.
+      const msg = "Echo hasn't written the minutes for this call yet. It does that about 15 minutes after a call ends (later while another call is recording). Then try again."
+      putDraft({ ...getDraft(call), call, state: 'failed', error: msg, at: new Date().toISOString(), lastAsk: kind === 'revise' ? ask : '' })
+      throw new Error(msg)
+    }
     running.add(call)
     const rec = getDraft(call)
     const audience = audienceIn === 'team' || audienceIn === 'everyone' ? audienceIn : rec.audience || 'everyone'
