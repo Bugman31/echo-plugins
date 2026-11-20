@@ -1,0 +1,31 @@
+{
+  "id": "call-summary",
+  "name": "Call Summary",
+  "version": "0.1.1",
+  "echo": ">=0.8.0",
+  "summary": "Turn any call into a summary PDF to share: robust notes, decisions, action items with owners and the shared screens. Ask Claude to change it in your own words, then save it and send it yourself",
+  "uses": {
+    "claude": {},
+    "echo": {
+      "read": ["sources"]
+    }
+  },
+  "main": "main.js",
+  "client": "client.js",
+  "settings": [
+    {
+      "key": "me",
+      "label": "Your name",
+      "type": "string",
+      "default": "",
+      "help": "Shown as \"Prepared by\" on the PDF and used to sign the email text, for example Alex Morgan. Empty: the name from the call."
+    },
+    {
+      "key": "paper",
+      "label": "Paper size",
+      "type": "string",
+      "default": "letter",
+      "help": "letter (US Letter) or a4."
+    }
+  ]
+}

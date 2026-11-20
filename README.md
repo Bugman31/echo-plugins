@@ -22,6 +22,7 @@ An Echo plugin is a package that brings **its own code** — the way dsh-desktop
 | [Obsidian vault](plugins/obsidian) | Your vault as Echo's second brain; minutes and people written into it |
 | [Meeting Notebook](plugins/meeting-notebook) | Your calls filed as a notebook by type, client or person and date: Today, editable minutes, Echo's own action items, review on re-filing, and actions Claude drafts for you |
 | [Meeting Prep](plugins/meeting-prep) | Each weekday morning, a briefing for every meeting: its purpose, background, people, what's owed both ways, what to watch for and the deal in CRM, from your calendar, notebook, Teams, mail and CRM |
+| [Call Summary](plugins/call-summary) | Turn any call into a summary PDF to share: robust notes, decisions, action items with owners and the shared screens. Ask Claude to change it in your own words, then save it and send it yourself |
 
 Scheduler needs an Echo with plugins (0.7 or later); Telegram and Obsidian vault need capabilities that arrive after it — until then Echo lists them as "Needs a newer Echo". Your Telegram bot lives in the Telegram plugin (Settings → From plugins → Telegram); other plugins send to it through Echo.
 
