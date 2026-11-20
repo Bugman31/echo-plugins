@@ -13,7 +13,7 @@
 //   made.json            [{call, file, title, date, pages, bytes, at}], newest first
 //   runs/<stamp>/        each Claude run's prompt, answer and log (the last 30 kept)
 
-const HOST_VERSION = '0.2.0'
+const HOST_VERSION = '0.2.1'
 const KEEP_RUNS = 30
 const KEEP_HISTORY = 20
 const MAX_TRANSCRIPT = 100000

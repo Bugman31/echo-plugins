@@ -2,7 +2,7 @@
 // "Create summary PDF" item in each call's menu, and ⌘K entries. The PDF is built here (pdf.js) and saved by
 // the host half, in parts.
 
-const VERSION = '0.2.0'
+const VERSION = '0.2.1'
 const ACTIVITY = 'call-summary:summaries'
 const ICON = (s) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 15h5M10 18h3"/></svg>`
 const SECTIONS = [['summary', 'Summary'], ['decisions', 'Decisions'], ['actions', 'Action items (owner, due date)'], ['topics', 'Discussion, by topic'], ['questions', 'Open questions'], ['screens', 'Shared screens'], ['attendees', 'Attendees']]
@@ -145,7 +145,8 @@ export function apply(ctx) {
   function toast(m) { toastEl.textContent = m; toastEl.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => toastEl.classList.remove('show'), 2600) }
 
   // ---- state
-  let screen = 'list', calls = [], callsNext = null, q = '', week = lsGet('cs-week', true), sel = null, loadingCalls = false
+  let callsTotal = 0
+  let screen = 'list', calls = [], callsNext = null, q = '', week = lsGet('cs-week2', false), sel = null, loadingCalls = false
   let info = null, rec = null, frames = [], saved = null, saving = '', lastLoad = 0
   const sections = lsGet('cs-sections', {})
   let sub = lsGet('cs-sub', ''), newSub = false
@@ -156,12 +157,19 @@ export function apply(ctx) {
     if (loadingCalls) return
     loadingCalls = true
     try {
-      const qs = `limit=60${q ? `&q=${encodeURIComponent(q)}` : ''}${more && callsNext ? `&before=${encodeURIComponent(callsNext)}` : ''}`
-      const d = await getJson(`api/calls?${qs}`)
-      const rows = (d.calls || []).filter((c) => c && c.name && !c.memo && c.status !== 'recording')
-      calls = more ? [...calls, ...rows] : rows
-      callsNext = d.next || null
-      if (!sel && calls.length) sel = (calls.find(ready) || calls[0]).name
+      // Every call, 500 a page (Echo's largest), following its cursor to the end.
+      let rows = more ? [...calls] : [], before = more ? callsNext : null
+      for (let n = 0; n < 20; n++) {
+        const d = await getJson(`api/calls?limit=500${q ? `&q=${encodeURIComponent(q)}` : ''}${before ? `&before=${encodeURIComponent(before)}` : ''}`)
+        rows = rows.concat((d.calls || []).filter((c) => c && c.name && !c.memo && c.status !== 'recording'))
+        before = d.next || null
+        if (!before) break
+      }
+      calls = rows
+      callsNext = before
+      callsTotal = calls.length
+      // The selection follows the list: a call the search hides gives way to the first one shown.
+      if (screen === 'list' && !calls.some((c) => c.name === sel)) { sel = calls.length ? (calls.find(ready) || calls[0]).name : null; rec = null; if (sel) loadView() }
     } catch (e) { toast("Couldn't read your calls: " + (e.message || e)) } finally { loadingCalls = false; draw() }
   }
   async function loadView() {
@@ -203,7 +211,7 @@ export function apply(ctx) {
       <header class="cs-band"><p class="cs-lbl">Call summaries</p><h1>Share a call as a PDF</h1><p>Pick any call Echo recorded. Claude writes the notes, you choose the screens and check it, and the PDF is saved for you to email.</p></header>
       ${staleHtml()}
       <div class="cs-find"><label for="cs-q" style="position:absolute;left:-9999px">Search calls</label><input id="cs-q" placeholder="Search calls, people, clients" value="${esc(q)}" autocomplete="off">
-        <button class="cs-chip${week ? ' on' : ''}" data-cs-week="1">This week</button><button class="cs-chip${!week ? ' on' : ''}" data-cs-week="0">All</button></div>
+        <button class="cs-chip${!week ? ' on' : ''}" data-cs-week="0">All${callsTotal ? ` · ${callsTotal}` : ''}</button><button class="cs-chip${week ? ' on' : ''}" data-cs-week="1">This week</button></div>
       <div class="cs-rows">${rows.length ? rows.map(row).join('') : `<p class="cs-note" style="padding:18px 28px">${loadingCalls ? 'Reading your calls…' : q ? `No calls match “${esc(q)}”.` : 'No calls this week. Choose All to see older ones.'}</p>`}
         ${callsNext && (!week || q) ? '<button class="cs-pill cs-more" data-cs-more>Show older calls</button>' : ''}</div>
     </div>
@@ -310,7 +318,8 @@ export function apply(ctx) {
   }
 
   // ---- drawing (never while the user types in the preview or the ask box)
-  const typing = () => { const a = document.activeElement; return !!(a && root.contains(a) && (a.isContentEditable || /TEXTAREA|INPUT/.test(a.tagName)) && a.type !== 'checkbox') }
+  // Only the summary's own fields hold a redraw back; the search, ask and folder boxes are put back as they were.
+  const typing = () => { const a = document.activeElement; return !!(a && root.contains(a) && (a.isContentEditable || (a.dataset && a.dataset.csF != null))) }
   let lastHtml = ''
   function draw(force) {
     if (!force && typing()) return
@@ -318,11 +327,14 @@ export function apply(ctx) {
     if (html === lastHtml) return
     const scroller = root.querySelector('.cs-scroll'), top = scroller ? scroller.scrollTop : 0
     const askVal = (root.querySelector('#cs-askbox') || {}).value || ''
+    const a = document.activeElement, keepId = a && root.contains(a) && a.id ? a.id : ''
+    let selr = null; try { selr = keepId && a.selectionStart != null ? [a.selectionStart, a.selectionEnd] : null } catch { selr = null }
     root.innerHTML = html
     root.appendChild(toastEl)
     lastHtml = html
     const sc = root.querySelector('.cs-scroll'); if (sc) sc.scrollTop = top
     const ab = root.querySelector('#cs-askbox'); if (ab && askVal) ab.value = askVal
+    if (keepId) { const el = root.querySelector('#' + keepId); if (el) { el.focus(); if (selr) try { el.setSelectionRange(selr[0], selr[1]) } catch { /* not a text box */ } } }
   }
 
   // ---- edits in the preview
@@ -417,7 +429,7 @@ export function apply(ctx) {
     const b = e.target.closest('button'); if (!b) return
     const ds = b.dataset
     if (ds.csSel) { sel = ds.csSel; rec = null; draw(true); loadView(); return }
-    if (ds.csWeek) { week = ds.csWeek === '1'; lsSet('cs-week', week); draw(true); return }
+    if (ds.csWeek) { week = ds.csWeek === '1'; lsSet('cs-week2', week); draw(true); return }
     if (ds.csMore !== undefined) { loadCalls(true); return }
     if (ds.csOpen !== undefined) { openBuild(sel); return }
     if (ds.csGo) { screen = ds.csGo; if (screen === 'list') loadView(); draw(true); return }
