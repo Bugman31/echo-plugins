@@ -1,7 +1,7 @@
 {
   "id": "call-summary",
   "name": "Call Summary",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "echo": ">=0.8.0",
   "summary": "Turn any call into a summary PDF to share: robust notes, decisions, action items with owners and the shared screens. Ask Claude to change it in your own words, then save it and send it yourself",
   "uses": {

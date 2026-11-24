@@ -2,7 +2,7 @@
 // "Create summary PDF" item in each call's menu, and ⌘K entries. The PDF is built here (pdf.js) and saved by
 // the host half, in parts.
 
-const VERSION = '0.2.1'
+const VERSION = '0.2.2'
 const ACTIVITY = 'call-summary:summaries'
 const ICON = (s) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 15h5M10 18h3"/></svg>`
 const SECTIONS = [['summary', 'Summary'], ['decisions', 'Decisions'], ['actions', 'Action items (owner, due date)'], ['topics', 'Discussion, by topic'], ['questions', 'Open questions'], ['screens', 'Shared screens'], ['attendees', 'Attendees']]
@@ -145,7 +145,7 @@ export function apply(ctx) {
   function toast(m) { toastEl.textContent = m; toastEl.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => toastEl.classList.remove('show'), 2600) }
 
   // ---- state
-  let callsTotal = 0
+  let callsTotal = 0, callsAt = 0
   let screen = 'list', calls = [], callsNext = null, q = '', week = lsGet('cs-week2', false), sel = null, loadingCalls = false
   let info = null, rec = null, frames = [], saved = null, saving = '', lastLoad = 0
   const sections = lsGet('cs-sections', {})
@@ -166,6 +166,7 @@ export function apply(ctx) {
         if (!before) break
       }
       calls = rows
+      callsAt = Date.now()
       callsNext = before
       callsTotal = calls.length
       // The selection follows the list: a call the search hides gives way to the first one shown.
@@ -326,6 +327,7 @@ export function apply(ctx) {
     const html = screen === 'build' ? buildHtml() : screen === 'saved' && saved ? savedHtml() : listHtml()
     if (html === lastHtml) return
     const scroller = root.querySelector('.cs-scroll'), top = scroller ? scroller.scrollTop : 0
+    const rowsEl = root.querySelector('.cs-rows'), rowsTop = rowsEl ? rowsEl.scrollTop : 0
     const askVal = (root.querySelector('#cs-askbox') || {}).value || ''
     const a = document.activeElement, keepId = a && root.contains(a) && a.id ? a.id : ''
     let selr = null; try { selr = keepId && a.selectionStart != null ? [a.selectionStart, a.selectionEnd] : null } catch { selr = null }
@@ -333,6 +335,7 @@ export function apply(ctx) {
     root.appendChild(toastEl)
     lastHtml = html
     const sc = root.querySelector('.cs-scroll'); if (sc) sc.scrollTop = top
+    const rw = root.querySelector('.cs-rows'); if (rw) rw.scrollTop = rowsTop
     const ab = root.querySelector('#cs-askbox'); if (ab && askVal) ab.value = askVal
     if (keepId) { const el = root.querySelector('#' + keepId); if (el) { el.focus(); if (selr) try { el.setSelectionRange(selr[0], selr[1]) } catch { /* not a text box */ } } }
   }
@@ -432,7 +435,7 @@ export function apply(ctx) {
     if (ds.csWeek) { week = ds.csWeek === '1'; lsSet('cs-week2', week); draw(true); return }
     if (ds.csMore !== undefined) { loadCalls(true); return }
     if (ds.csOpen !== undefined) { openBuild(sel); return }
-    if (ds.csGo) { screen = ds.csGo; if (screen === 'list') loadView(); draw(true); return }
+    if (ds.csGo) { screen = ds.csGo; if (screen === 'list') { loadView(); loadCalls(false) } draw(true); return }
     if (ds.csAud) { if ((rec && rec.audience) === ds.csAud && rec.doc) return; lsSet('cs-aud', ds.csAud); write(ds.csAud); return }
     if (ds.csRedo !== undefined) { write(); return }
     if (ds.csAsk !== undefined) { ask((root.querySelector('#cs-askbox') || {}).value); return }
@@ -462,7 +465,8 @@ export function apply(ctx) {
     after(box) {
       const host = box.querySelector('.cs-host')
       if (host && root.parentNode !== host) host.appendChild(root)
-      if (!calls.length && !loadingCalls) loadCalls(false)
+      // New calls and fresh minutes show up: the list is read again each minute while it is open.
+      if (!loadingCalls && (!calls.length || (screen === 'list' && Date.now() - callsAt > 60000))) loadCalls(false)
       if (!info || (Date.now() - lastLoad > (busy() ? 3000 : 30000) && !typing())) loadView()
     },
   })
